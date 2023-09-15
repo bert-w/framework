@@ -18,6 +18,7 @@ use Illuminate\Contracts\Validation\ValidatorAwareRule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Exceptions\MathException;
 use Illuminate\Translation\ArrayLoader;
 use Illuminate\Translation\Translator;
 use Illuminate\Validation\DatabasePresenceVerifierInterface;
@@ -1413,6 +1414,29 @@ class ValidationValidatorTest extends TestCase
         $this->assertTrue($v->fails());
         $this->assertCount(1, $v->messages());
         $this->assertSame('The baz field is required when foo is empty.', $v->messages()->first('baz'));
+    }
+
+    public function testRequiredIfArrayToStringConversationErrorException()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, [
+            'is_customer' => 1,
+            'fullname' => null,
+        ], [
+            'is_customer' => 'required|boolean',
+            'fullname' => 'required_if:is_customer,true',
+        ]);
+        $this->assertTrue($v->fails());
+
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, [
+            'is_customer' => ['test'],
+            'fullname' => null,
+        ], [
+            'is_customer' => 'required|boolean',
+            'fullname' => 'required_if:is_customer,true',
+        ]);
+        $this->assertTrue($v->fails());
     }
 
     public function testRequiredUnless()
@@ -2860,6 +2884,50 @@ class ValidationValidatorTest extends TestCase
 
         $v = new Validator($trans, ['foo' => '1.88888888888888888888'], ['foo' => 'Decimal:20|Max:1.88888888888888888888']);
         $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, [
+            // these are the same number
+            'decimal' => '0.555',
+            'scientific' => '5.55e-1',
+        ], [
+            'decimal' => 'Decimal:0,2',
+            'scientific' => 'Decimal:0,2',
+        ]);
+        $this->assertSame(['decimal', 'scientific'], $v->errors()->keys());
+
+        $v = new Validator($trans, [
+            // these are the same number
+            'decimal' => '0.555',
+            'scientific' => '5.55e-1',
+        ], [
+            'decimal' => 'Decimal:0,3',
+            'scientific' => 'Decimal:0,3',
+        ]);
+        $this->assertSame(['scientific'], $v->errors()->keys());
+
+        $v = new Validator($trans, ['foo' => '+'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->fails());
+        $v = new Validator($trans, ['foo' => '-'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->fails());
+        $v = new Validator($trans, ['foo' => '10@12'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->fails());
+
+        $v = new Validator($trans, ['foo' => '+123'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->passes());
+        $v = new Validator($trans, ['foo' => '-123'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->passes());
+        $v = new Validator($trans, ['foo' => '+123.'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->passes());
+        $v = new Validator($trans, ['foo' => '-123.'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->passes());
+        $v = new Validator($trans, ['foo' => '123.'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->passes());
+        $v = new Validator($trans, ['foo' => '123.'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->passes());
+        $v = new Validator($trans, ['foo' => '123.34'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->passes());
+        $v = new Validator($trans, ['foo' => '123.34'], ['foo' => 'Decimal:0,2']);
+        $this->assertTrue($v->passes());
     }
 
     public function testValidateInt()
@@ -3883,6 +3951,19 @@ class ValidationValidatorTest extends TestCase
         $this->assertFalse($v->passes());
     }
 
+    public function testValidateUrlWithProtocols()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+
+        // Allow a non-standard protocol
+        $v = new Validator($trans, ['x' => 'foo://bar'], ['x' => 'url:https,foo']);
+        $this->assertTrue($v->passes());
+
+        // Test with a standard protocol
+        $v = new Validator($trans, ['x' => 'http://laravel.com'], ['x' => 'url:https']);
+        $this->assertFalse($v->passes());
+    }
+
     /**
      * @dataProvider validUrls
      */
@@ -4712,6 +4793,12 @@ class ValidationValidatorTest extends TestCase
         $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone']);
         $this->assertTrue($v->passes());
 
+        $v = new Validator($trans, ['foo' => 'Europe/Kyiv'], ['foo' => 'Timezone']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone']);
+        $this->assertFalse($v->passes());
+
         $v = new Validator($trans, ['foo' => 'africa/windhoek'], ['foo' => 'Timezone']);
         $this->assertFalse($v->passes());
 
@@ -4722,6 +4809,488 @@ class ValidationValidatorTest extends TestCase
         $this->assertFalse($v->passes());
 
         $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithAfricaOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:Africa']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:Africa']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:Africa']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:Africa']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'America/New_York'], ['foo' => 'Timezone:Africa']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:Africa']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'africa/windhoek'], ['foo' => 'Timezone:Africa']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:Africa']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:Africa']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:Africa']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithAmericaOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:America']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:America']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:America']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:America']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'America/New_York'], ['foo' => 'Timezone:America']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:America']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'america/new_york'], ['foo' => 'Timezone:America']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:America']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:America']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:America']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithAntarcticaOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:Antarctica']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:Antarctica']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:Antarctica']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:Antarctica']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Antarctica/Mawson'], ['foo' => 'Timezone:Antarctica']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:Antarctica']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'antarctica/mawson'], ['foo' => 'Timezone:Antarctica']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:Antarctica']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:Antarctica']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:Antarctica']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithArcticOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:Arctic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:Arctic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:Arctic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:Arctic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Arctic/Longyearbyen'], ['foo' => 'Timezone:Arctic']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:Arctic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'arctic/longyearbyen'], ['foo' => 'Timezone:Arctic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:Arctic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:Arctic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:Arctic']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithAsiaOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:Asia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:Asia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:Asia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:Asia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Asia/Tokyo'], ['foo' => 'Timezone:Asia']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:Asia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'asia/tokyo'], ['foo' => 'Timezone:Asia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:Asia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:Asia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:Asia']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithAtlanticOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:Atlantic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:Atlantic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:Atlantic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:Atlantic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Atlantic/Cape_Verde'], ['foo' => 'Timezone:Atlantic']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:Atlantic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'atlantic/cape_verde'], ['foo' => 'Timezone:Atlantic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:Atlantic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:Atlantic']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:Atlantic']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithAustraliaOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:Australia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:Australia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:Australia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:Australia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Australia/Sydney'], ['foo' => 'Timezone:Australia']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:Australia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'australia/sydney'], ['foo' => 'Timezone:Australia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:Australia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:Australia']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:Australia']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithEuropeOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:Europe']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:Europe']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:Europe']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:Europe']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kyiv'], ['foo' => 'Timezone:Europe']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:Europe']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'europe/kyiv'], ['foo' => 'Timezone:Europe']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:Europe']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:Europe']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:Europe']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithIndianOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:Indian']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:Indian']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:Indian']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:Indian']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Indian/Christmas'], ['foo' => 'Timezone:Indian']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:Indian']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'indian/christmas'], ['foo' => 'Timezone:Indian']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:Indian']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:Indian']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:Indian']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithPacificOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:Pacific']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:Pacific']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:Pacific']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:Pacific']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Pacific/Fiji'], ['foo' => 'Timezone:Pacific']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:Pacific']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'pacific/fiji'], ['foo' => 'Timezone:Pacific']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:Pacific']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:Pacific']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:Pacific']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithUTCOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:UTC']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:UTC']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:UTC']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:UTC']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:UTC']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'utc'], ['foo' => 'Timezone:UTC']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:UTC']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:UTC']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:UTC']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithAllOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:All']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:All']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:All']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:All']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Indian/Christmas'], ['foo' => 'Timezone:All']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kyiv'], ['foo' => 'Timezone:All']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:All']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'indian/christmas'], ['foo' => 'Timezone:All']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:All']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:All']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:All']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithAllWithBCOption()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Indian/Christmas'], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kyiv'], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'indian/christmas'], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:All_with_BC']);
+        $this->assertFalse($v->passes());
+    }
+
+    public function testValidateTimezoneWithPerCountryOptionWithoutSpecifyingCountry()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $v = new Validator($trans, ['foo' => 'India'], ['foo' => 'Timezone:Per_country,IN']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Cairo'], ['foo' => 'Timezone:Per_country,CA']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'UTC'], ['foo' => 'Timezone:Per_country,GB']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Africa/Windhoek'], ['foo' => 'Timezone:Per_country,NA']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kiev'], ['foo' => 'Timezone:Per_country,UA']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kyiv'], ['foo' => 'Timezone:Per_country,UA']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'Europe/Kyiv'], ['foo' => 'Timezone:Per_country,ua']);
+        $this->assertTrue($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'utc'], ['foo' => 'Timezone:Per_country,GB']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GMT'], ['foo' => 'Timezone:Per_country,GB']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => 'GB'], ['foo' => 'Timezone:Per_country,GB']);
+        $this->assertFalse($v->passes());
+
+        $v = new Validator($trans, ['foo' => ['this_is_not_a_timezone']], ['foo' => 'Timezone:Per_country,GB']);
         $this->assertFalse($v->passes());
     }
 
@@ -7711,6 +8280,39 @@ class ValidationValidatorTest extends TestCase
         $this->assertSame($expectedValidatedData, $validator->validated());
     }
 
+    public function testExcludeBeforeADependentRule()
+    {
+        $validator = new Validator(
+            $this->getIlluminateArrayTranslator(),
+            [
+                'profile_id' => null,
+                'type'       => 'denied',
+            ],
+            [
+                'type'       => ['required', 'string', 'exclude'],
+                'profile_id' => ['nullable', 'required_if:type,profile', 'integer'],
+            ],
+        );
+
+        $this->assertTrue($validator->passes());
+        $this->assertSame(['profile_id' => null], $validator->validated());
+
+        $validator = new Validator(
+            $this->getIlluminateArrayTranslator(),
+            [
+                'profile_id' => null,
+                'type'       => 'profile',
+            ],
+            [
+                'type'       => ['required', 'string', 'exclude'],
+                'profile_id' => ['nullable', 'required_if:type,profile', 'integer'],
+            ],
+        );
+
+        $this->assertFalse($validator->passes());
+        $this->assertSame(['profile_id' => ['validation.required_if']], $validator->getMessageBag()->getMessages());
+    }
+
     public function testExcludingArrays()
     {
         $validator = new Validator(
@@ -8220,6 +8822,76 @@ class ValidationValidatorTest extends TestCase
             'size',
             'size_str',
         ], $validator->messages()->keys());
+    }
+
+    /** @dataProvider outsideRangeExponents */
+    public function testItLimitsLengthOfScientificNotationExponent($value)
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $validator = new Validator($trans, ['foo' => $value], ['foo' => 'numeric|min:3']);
+
+        $this->expectException(MathException::class);
+        $this->expectExceptionMessage('Scientific notation exponent outside of allowed range.');
+
+        $validator->passes();
+    }
+
+    public static function outsideRangeExponents()
+    {
+        return [
+            ['1.0e+1001'],
+            ['1.0E+1001'],
+            ['1.0e1001'],
+            ['1.0E1001'],
+            ['1.0e-1001'],
+            ['1.0E-1001'],
+        ];
+    }
+
+    /** @dataProvider withinRangeExponents */
+    public function testItAllowsScientificNotationWithinRange($value, $rule)
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $validator = new Validator($trans, ['foo' => $value], ['foo' => ['numeric', $rule]]);
+
+        $this->assertTrue($validator->passes());
+    }
+
+    public static function withinRangeExponents()
+    {
+        return [
+            ['1.0e+1000', 'min:3'],
+            ['1.0E+1000', 'min:3'],
+            ['1.0e1000', 'min:3'],
+            ['1.0E1000', 'min:3'],
+            ['1.0e-1000', 'max:3'],
+            ['1.0E-1000', 'max:3'],
+        ];
+    }
+
+    public function testItCanConfigureAllowedExponentRange()
+    {
+        $trans = $this->getIlluminateArrayTranslator();
+        $validator = new Validator($trans, ['foo' => '1.0e-1000'], ['foo' => ['numeric', 'max:3']]);
+        $scale = $attribute = $value = null;
+        $withinRange = true;
+
+        $validator->ensureExponentWithinAllowedRangeUsing(function () use (&$scale, &$attribute, &$value, &$withinRange) {
+            [$scale, $attribute, $value] = func_get_args();
+
+            return $withinRange;
+        });
+
+        $this->assertTrue($validator->passes());
+        $this->assertSame(-1000, $scale);
+        $this->assertSame('foo', $attribute);
+        $this->assertSame('1.0e-1000', $value);
+
+        $withinRange = false;
+        $this->expectException(MathException::class);
+        $this->expectExceptionMessage('Scientific notation exponent outside of allowed range.');
+
+        $validator->passes();
     }
 
     protected function getTranslator()

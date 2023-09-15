@@ -126,6 +126,18 @@ class DatabaseEloquentFactoryTest extends TestCase
         $this->assertInstanceOf(Collection::class, $users);
         $this->assertCount(2, $users);
 
+        $users = FactoryTestUserFactory::new()->createMany(2);
+        $this->assertInstanceOf(Collection::class, $users);
+        $this->assertCount(2, $users);
+
+        $users = FactoryTestUserFactory::times(2)->createMany();
+        $this->assertInstanceOf(Collection::class, $users);
+        $this->assertCount(2, $users);
+
+        $users = FactoryTestUserFactory::new()->createMany();
+        $this->assertInstanceOf(Collection::class, $users);
+        $this->assertCount(1, $users);
+
         $users = FactoryTestUserFactory::times(10)->create();
         $this->assertCount(10, $users);
     }
@@ -497,7 +509,6 @@ class DatabaseEloquentFactoryTest extends TestCase
 
         $class = new ReflectionClass($factory);
         $prop = $class->getProperty('count');
-        $prop->setAccessible(true);
         $value = $prop->getValue($factory);
 
         $this->assertSame(3, $value);
@@ -898,7 +909,7 @@ class FactoryTestCommentFactory extends Factory
         return [
             'commentable_id' => FactoryTestPostFactory::new(),
             'commentable_type' => FactoryTestPost::class,
-            'user_id' => FactoryTestUserFactory::new(),
+            'user_id' => fn () => FactoryTestUserFactory::new(),
             'body' => $this->faker->name(),
         ];
     }

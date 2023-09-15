@@ -264,7 +264,9 @@ class Connection implements ConnectionInterface
      */
     protected function getDefaultQueryGrammar()
     {
-        return new QueryGrammar;
+        ($grammar = new QueryGrammar)->setConnection($this);
+
+        return $grammar;
     }
 
     /**
@@ -324,7 +326,7 @@ class Connection implements ConnectionInterface
     /**
      * Begin a fluent query against a database table.
      *
-     * @param  \Closure|\Illuminate\Database\Query\Builder|\Illuminate\Database\Query\Expression|string  $table
+     * @param  \Closure|\Illuminate\Database\Query\Builder|\Illuminate\Contracts\Database\Query\Expression|string  $table
      * @param  string|null  $as
      * @return \Illuminate\Database\Query\Builder
      */
@@ -827,10 +829,27 @@ class Connection implements ConnectionInterface
         // message to include the bindings with SQL, which will make this exception a
         // lot more helpful to the developer instead of just the database's errors.
         catch (Exception $e) {
+            if ($this->isUniqueConstraintError($e)) {
+                throw new UniqueConstraintViolationException(
+                    $this->getName(), $query, $this->prepareBindings($bindings), $e
+                );
+            }
+
             throw new QueryException(
                 $this->getName(), $query, $this->prepareBindings($bindings), $e
             );
         }
+    }
+
+    /**
+     * Determine if the given database exception was caused by a unique constraint violation.
+     *
+     * @param  \Exception  $exception
+     * @return bool
+     */
+    protected function isUniqueConstraintError(Exception $exception)
+    {
+        return false;
     }
 
     /**
@@ -1075,6 +1094,69 @@ class Connection implements ConnectionInterface
     public function raw($value)
     {
         return new Expression($value);
+    }
+
+    /**
+     * Escape a value for safe SQL embedding.
+     *
+     * @param  string|float|int|bool|null  $value
+     * @param  bool  $binary
+     * @return string
+     */
+    public function escape($value, $binary = false)
+    {
+        if ($value === null) {
+            return 'null';
+        } elseif ($binary) {
+            return $this->escapeBinary($value);
+        } elseif (is_int($value) || is_float($value)) {
+            return (string) $value;
+        } elseif (is_bool($value)) {
+            return $this->escapeBool($value);
+        } else {
+            if (str_contains($value, "\00")) {
+                throw new RuntimeException('Strings with null bytes cannot be escaped. Use the binary escape option.');
+            }
+
+            if (preg_match('//u', $value) === false) {
+                throw new RuntimeException('Strings with invalid UTF-8 byte sequences cannot be escaped.');
+            }
+
+            return $this->escapeString($value);
+        }
+    }
+
+    /**
+     * Escape a string value for safe SQL embedding.
+     *
+     * @param  string  $value
+     * @return string
+     */
+    protected function escapeString($value)
+    {
+        return $this->getReadPdo()->quote($value);
+    }
+
+    /**
+     * Escape a boolean value for safe SQL embedding.
+     *
+     * @param  bool  $value
+     * @return string
+     */
+    protected function escapeBool($value)
+    {
+        return $value ? '1' : '0';
+    }
+
+    /**
+     * Escape a binary value for safe SQL embedding.
+     *
+     * @param  string  $value
+     * @return string
+     */
+    protected function escapeBinary($value)
+    {
+        throw new RuntimeException('The database connection does not support escaping binary values.');
     }
 
     /**
@@ -1518,6 +1600,22 @@ class Connection implements ConnectionInterface
     public function getQueryLog()
     {
         return $this->queryLog;
+    }
+
+    /**
+     * Get the connection query log with embedded bindings.
+     *
+     * @return array
+     */
+    public function getRawQueryLog()
+    {
+        return array_map(fn (array $log) => [
+            'raw_query' => $this->queryGrammar->substituteBindingsIntoRawSql(
+                $log['query'],
+                $this->prepareBindings($log['bindings'])
+            ),
+            'time' => $log['time'],
+        ], $this->getQueryLog());
     }
 
     /**

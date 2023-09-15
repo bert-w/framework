@@ -3,6 +3,7 @@
 namespace Illuminate\Tests\Support;
 
 use Carbon\CarbonInterval;
+use Exception;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Sleep;
 use PHPUnit\Framework\AssertionFailedError;
@@ -35,7 +36,7 @@ class SleepTest extends TestCase
         Sleep::for(1.5)->seconds();
         $end = microtime(true);
 
-        $this->assertEqualsWithDelta(1.5, $end - $start, 0.03);
+        $this->assertEqualsWithDelta(1.5, round($end - $start, 1, PHP_ROUND_HALF_DOWN), 0.03);
     }
 
     public function testItCanFakeSleeping()
@@ -413,5 +414,127 @@ class SleepTest extends TestCase
         } catch (AssertionFailedError $e) {
             $this->assertSame("The expected sleep was found [0] times instead of [1].\nFailed asserting that 0 is identical to 1.", $e->getMessage());
         }
+    }
+
+    public function testItCanCreateMacrosViaMacroable()
+    {
+        Sleep::fake();
+
+        Sleep::macro('forSomeConfiguredAmountOfTime', static function () {
+            return Sleep::for(3)->seconds();
+        });
+
+        Sleep::macro('useSomeOtherAmountOfTime', function () {
+            /** @var Sleep $this */
+            return $this->duration(1.234)->seconds();
+        });
+
+        Sleep::macro('andSomeMoreGranularControl', function () {
+            /** @var Sleep $this */
+            return $this->and(567)->microseconds();
+        });
+
+        // A static macro can be referenced
+        $sleep = Sleep::forSomeConfiguredAmountOfTime();
+        $this->assertSame($sleep->duration->totalMicroseconds, 3000000);
+
+        // A macro can specify a new duration
+        $sleep = $sleep->useSomeOtherAmountOfTime();
+        $this->assertSame($sleep->duration->totalMicroseconds, 1234000);
+
+        // A macro can supplement an existing duration
+        $sleep = $sleep->andSomeMoreGranularControl();
+        $this->assertSame($sleep->duration->totalMicroseconds, 1234567);
+    }
+
+    public function testItCanReplacePreviouslyDefinedDurations()
+    {
+        Sleep::fake();
+
+        Sleep::macro('setDuration', function ($duration) {
+            return $this->duration($duration);
+        });
+
+        $sleep = Sleep::for(1)->second();
+        $this->assertSame($sleep->duration->totalMicroseconds, 1000000);
+
+        $sleep->setDuration(2)->second();
+        $this->assertSame($sleep->duration->totalMicroseconds, 2000000);
+
+        $sleep->setDuration(500)->milliseconds();
+        $this->assertSame($sleep->duration->totalMicroseconds, 500000);
+    }
+
+    public function testItCanSleepConditionallyWhen()
+    {
+        Sleep::fake();
+
+        // Control test
+        Sleep::assertSlept(fn () => true, 0);
+        Sleep::for(1)->second();
+        Sleep::assertSlept(fn () => true, 1);
+        Sleep::fake();
+        Sleep::assertSlept(fn () => true, 0);
+
+        // Reset
+        Sleep::fake();
+
+        // Will not sleep if `when()` yields `false`
+        Sleep::for(1)->second()->when(false);
+        Sleep::for(1)->second()->when(fn () => false);
+
+        // Will not sleep if `unless()` yields `true`
+        Sleep::for(1)->second()->unless(true);
+        Sleep::for(1)->second()->unless(fn () => true);
+
+        // Finish 'do not sleep' tests - assert no sleeping occurred
+        Sleep::assertSlept(fn () => true, 0);
+
+        // Will sleep if `when()` yields `true`
+        Sleep::for(1)->second()->when(true);
+        Sleep::assertSlept(fn () => true, 1);
+        Sleep::for(1)->second()->when(fn () => true);
+        Sleep::assertSlept(fn () => true, 2);
+
+        // Will sleep if `unless()` yields `false`
+        Sleep::for(1)->second()->unless(false);
+        Sleep::assertSlept(fn () => true, 3);
+        Sleep::for(1)->second()->unless(fn () => false);
+        Sleep::assertSlept(fn () => true, 4);
+    }
+
+    public function testItCanRegisterCallbacksToRunInTests()
+    {
+        $countA = 0;
+        $countB = 0;
+        Sleep::fake();
+        Sleep::whenFakingSleep(function ($duration) use (&$countA) {
+            $countA += $duration->totalMilliseconds;
+        });
+        Sleep::whenFakingSleep(function ($duration) use (&$countB) {
+            $countB += $duration->totalMilliseconds;
+        });
+
+        Sleep::for(1)->millisecond();
+        Sleep::for(2)->millisecond();
+
+        Sleep::assertSequence([
+            Sleep::for(1)->millisecond(),
+            Sleep::for(2)->millisecond(),
+        ]);
+
+        $this->assertSame(3, $countA);
+        $this->assertSame(3, $countB);
+    }
+
+    public function testItDoesntRunCallbacksWhenNotFaking()
+    {
+        Sleep::whenFakingSleep(function () {
+            throw new Exception('Should not run without faking.');
+        });
+
+        Sleep::for(1)->millisecond();
+
+        $this->assertTrue(true);
     }
 }

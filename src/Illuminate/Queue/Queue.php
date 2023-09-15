@@ -102,11 +102,11 @@ abstract class Queue
             $job = CallQueuedClosure::create($job);
         }
 
-        $payload = json_encode($this->createPayloadArray($job, $queue, $data), \JSON_UNESCAPED_UNICODE);
+        $payload = json_encode($value = $this->createPayloadArray($job, $queue, $data), \JSON_UNESCAPED_UNICODE);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new InvalidPayloadException(
-                'Unable to JSON encode payload. Error code: '.json_last_error()
+                'Unable to JSON encode payload. Error code: '.json_last_error(), $value
             );
         }
 
@@ -305,15 +305,15 @@ abstract class Queue
             $this->container->bound('db.transactions')) {
             return $this->container->make('db.transactions')->addCallback(
                 function () use ($payload, $queue, $delay, $callback, $job) {
-                    return tap($callback($payload, $queue, $delay), function ($jobId) use ($job) {
-                        $this->raiseJobQueuedEvent($jobId, $job);
+                    return tap($callback($payload, $queue, $delay), function ($jobId) use ($job, $payload) {
+                        $this->raiseJobQueuedEvent($jobId, $job, $payload);
                     });
                 }
             );
         }
 
-        return tap($callback($payload, $queue, $delay), function ($jobId) use ($job) {
-            $this->raiseJobQueuedEvent($jobId, $job);
+        return tap($callback($payload, $queue, $delay), function ($jobId) use ($job, $payload) {
+            $this->raiseJobQueuedEvent($jobId, $job, $payload);
         });
     }
 
@@ -341,12 +341,13 @@ abstract class Queue
      *
      * @param  string|int|null  $jobId
      * @param  \Closure|string|object  $job
+     * @param  string  $payload
      * @return void
      */
-    protected function raiseJobQueuedEvent($jobId, $job)
+    protected function raiseJobQueuedEvent($jobId, $job, $payload)
     {
         if ($this->container->bound('events')) {
-            $this->container['events']->dispatch(new JobQueued($this->connectionName, $jobId, $job));
+            $this->container['events']->dispatch(new JobQueued($this->connectionName, $jobId, $job, $payload));
         }
     }
 

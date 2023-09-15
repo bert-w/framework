@@ -5,6 +5,7 @@ namespace Illuminate\Tests\Database;
 use BadMethodCallException;
 use Closure;
 use DateTime;
+use Illuminate\Contracts\Database\Query\ConditionExpression;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
@@ -1831,6 +1832,22 @@ class DatabaseQueryBuilderTest extends TestCase
         $builder = $this->getBuilder();
         $builder->select(['category', new Raw('count(*) as "total"')])->from('item')->where('department', '=', 'popular')->groupBy('category')->havingNotNull('total');
         $this->assertSame('select "category", count(*) as "total" from "item" where "department" = ? group by "category" having "total" is not null', $builder->toSql());
+    }
+
+    public function testHavingExpression()
+    {
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->having(
+            new class() implements ConditionExpression
+            {
+                public function getValue(\Illuminate\Database\Grammar $grammar)
+                {
+                    return '1 = 1';
+                }
+            }
+        );
+        $this->assertSame('select * from "users" having 1 = 1', $builder->toSql());
+        $this->assertSame([], $builder->getBindings());
     }
 
     public function testHavingShortcut()
@@ -5008,7 +5025,7 @@ SQL;
 
         $builder->shouldReceive('get')->once()->andReturnUsing(function () use ($builder, $results, $ts) {
             $this->assertEquals(
-                '(select "id", "start_time" as "created_at", \'video\' as type from "videos" where ("start_time" < ?)) union (select "id", "created_at", \'news\' as type from "news" where ("start_time" < ?)) order by "created_at" asc limit 17',
+                '(select "id", "start_time" as "created_at", \'video\' as type from "videos" where ("start_time" < ?)) union (select "id", "created_at", \'news\' as type from "news" where ("start_time" < ?)) order by "created_at" desc limit 17',
                 $builder->toSql());
             $this->assertEquals([$ts], $builder->bindings['where']);
             $this->assertEquals([$ts], $builder->bindings['union']);
@@ -5074,6 +5091,22 @@ SQL;
             'cursorName' => $cursorName,
             'parameters' => ['created_at', 'id'],
         ]), $result);
+    }
+
+    public function testWhereExpression()
+    {
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('orders')->where(
+            new class() implements ConditionExpression
+            {
+                public function getValue(\Illuminate\Database\Grammar $grammar)
+                {
+                    return '1 = 1';
+                }
+            }
+        );
+        $this->assertSame('select * from "orders" where 1 = 1', $builder->toSql());
+        $this->assertSame([], $builder->getBindings());
     }
 
     public function testWhereRowValues()
@@ -5628,6 +5661,22 @@ SQL;
 
         $this->assertSame('select * from "users" order by "email" asc', $clone->toSql());
         $this->assertEquals([], $clone->getBindings());
+    }
+
+    public function testToRawSql()
+    {
+        $connection = m::mock(ConnectionInterface::class);
+        $connection->shouldReceive('prepareBindings')
+            ->with(['foo'])
+            ->andReturn(['foo']);
+        $grammar = m::mock(Grammar::class)->makePartial();
+        $grammar->shouldReceive('substituteBindingsIntoRawSql')
+            ->with('select * from "users" where "email" = ?', ['foo'])
+            ->andReturn('select * from "users" where "email" = \'foo\'');
+        $builder = new Builder($connection, $grammar, m::mock(Processor::class));
+        $builder->select('*')->from('users')->where('email', 'foo');
+
+        $this->assertSame('select * from "users" where "email" = \'foo\'', $builder->toRawSql());
     }
 
     protected function getConnection()

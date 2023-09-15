@@ -32,14 +32,14 @@ jobs:
           - 6379:6379
         options: --entrypoint redis-server
       dynamodb:
-        image: amazon/dynamodb-local:latest
+        image: amazon/dynamodb-local:2.0.0
         ports:
           - 8888:8000
 
     strategy:
       fail-fast: true
       matrix:
-        php: [8.1, 8.2]
+        php: [8.1, 8.2, 8.3]
         stability: [prefer-lowest, prefer-stable]
 
     name: PHP ${{ matrix.php }} - ${{ matrix.stability }}
@@ -47,6 +47,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -89,8 +91,8 @@ jobs:
           DB_USERNAME: root
           DYNAMODB_CACHE_TABLE: laravel_dynamodb_test
           DYNAMODB_ENDPOINT: "http://localhost:8888"
-          AWS_ACCESS_KEY_ID: random_key
-          AWS_SECRET_ACCESS_KEY: random_secret
+          AWS_ACCESS_KEY_ID: randomKey
+          AWS_SECRET_ACCESS_KEY: randomSecret
 
       - name: Store artifacts
         uses: actions/upload-artifact@v3
@@ -106,7 +108,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        php: [8.1, 8.2]
+        php: [8.1, 8.2, 8.3]
         stability: [prefer-lowest, prefer-stable]
 
     name: PHP ${{ matrix.php }} - ${{ matrix.stability }} - Windows
@@ -119,6 +121,8 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
