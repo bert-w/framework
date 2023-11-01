@@ -471,14 +471,21 @@ class QueryBuilderTest extends DatabaseTestCase
             null => 'Lorem Ipsum e.',
         ],  DB::table('comments')->$pluckFn('content', 'votes')->toArray());
 
-        // Test null and numeric values with string keys.
-        $this->assertSame([
-            'Lorem Ipsum a.' => 1,
-            'Lorem Ipsum b.' => 0,
-            'Lorem Ipsum c.' => null,
-            'Lorem Ipsum d.' => null,
-            'Lorem Ipsum e.' => null,
-        ],  DB::table('comments')->$pluckFn('votes', 'content')->toArray());
+
+
+        if ($this->driver !== 'sqlsrv') {
+            // Skip test for MS SQL Server since integers are returned as strings unless
+            // PDO::SQLSRV_ATTR_FETCHES_NUMERIC_TYPE is used.
+
+            // Test null and numeric values with string keys.
+            $this->assertSame([
+                'Lorem Ipsum a.' => 1,
+                'Lorem Ipsum b.' => 0,
+                'Lorem Ipsum c.' => null,
+                'Lorem Ipsum d.' => null,
+                'Lorem Ipsum e.' => null,
+            ],  DB::table('comments')->$pluckFn('votes', 'content')->toArray());
+        }
     }
 
     public static function pluckProvider(): array
