@@ -9,6 +9,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class QueryBuilderTest extends DatabaseTestCase
 {
@@ -24,6 +25,23 @@ class QueryBuilderTest extends DatabaseTestCase
         DB::table('posts')->insert([
             ['title' => 'Foo Post', 'content' => 'Lorem Ipsum.', 'created_at' => new Carbon('2017-11-12 13:14:15')],
             ['title' => 'Bar Post', 'content' => 'Lorem Ipsum.', 'created_at' => new Carbon('2018-01-02 03:04:05')],
+        ]);
+
+        Schema::create('comments', function (Blueprint $table) {
+            $table->increments('id');
+            $table->foreignId('post_id');
+            $table->text('content');
+            $table->string('tag')->nullable();
+            $table->integer('votes')->nullable();
+            $table->timestamp('created_at');
+        });
+
+        DB::table('comments')->insert([
+            ['post_id' => 1, 'content' => 'Lorem Ipsum a.', 'tag' => 'science', 'votes' => 1, 'created_at' => new Carbon('2023-01-01 13:14:15')],
+            ['post_id' => 2, 'content' => 'Lorem Ipsum b.', 'tag' => 'science', 'votes' => 0, 'created_at' => new Carbon('2023-05-14 23:59:59')],
+            ['post_id' => 2, 'content' => 'Lorem Ipsum c.', 'tag' => 'entertainment', 'votes' => null, 'created_at' => new Carbon('2023-02-03 17:49:14')],
+            ['post_id' => 1, 'content' => 'Lorem Ipsum d.', 'tag' => null, 'votes' => null, 'created_at' => new Carbon('2023-04-27 20:00:05')],
+            ['post_id' => 1, 'content' => 'Lorem Ipsum e.', 'tag' => '', 'votes' => null, 'created_at' => new Carbon('2022-09-22 14:30:05')],
         ]);
     }
 
@@ -399,27 +417,29 @@ class QueryBuilderTest extends DatabaseTestCase
         $this->assertCount(3, DB::getQueryLog());
     }
 
-    public function testPluck()
+
+    #[DataProvider('pluckProvider')]
+    public function testPluck(string $pluckFn): void
     {
         // Test SELECT override, since pluck will take the first column.
         $this->assertSame([
             'Foo Post',
             'Bar Post',
-        ], DB::table('posts')->select(['content', 'id', 'title'])->pluck('title')->toArray());
+        ], DB::table('posts')->select(['content', 'id', 'title'])->$pluckFn('title')->toArray());
 
         // Test without SELECT override.
         $this->assertSame([
             'Foo Post',
             'Bar Post',
-        ], DB::table('posts')->pluck('title')->toArray());
+        ], DB::table('posts')->$pluckFn('title')->toArray());
 
         // Test specific key.
         $this->assertSame([
             1 => 'Foo Post',
             2 => 'Bar Post',
-        ], DB::table('posts')->pluck('title', 'id')->toArray());
+        ], DB::table('posts')->$pluckFn('title', 'id')->toArray());
 
-        $results = DB::table('posts')->pluck('title', 'created_at');
+        $results = DB::table('posts')->$pluckFn('title', 'created_at');
 
         // Test timestamps (truncates RDBMS differences).
         $this->assertSame([
@@ -434,15 +454,47 @@ class QueryBuilderTest extends DatabaseTestCase
         // Test duplicate keys (a match will override a previous match).
         $this->assertSame([
             'Lorem Ipsum.' => 'Bar Post',
-        ], DB::table('posts')->pluck('title', 'content')->toArray());
+        ], DB::table('posts')->$pluckFn('title', 'content')->toArray());
 
         // Test custom query calculations.
         $this->assertSame([
             2 => 'FOO POST',
             4 => 'BAR POST',
-        ], DB::table('posts')->pluck(
+        ], DB::table('posts')->$pluckFn(
             DB::raw('UPPER(title)'),
             DB::raw('2 * id')
         )->toArray());
+
+        // Test null and empty string as key.
+        $this->assertSame([
+            'science' => 'Lorem Ipsum b.',
+            'entertainment' => 'Lorem Ipsum c.',
+            null => 'Lorem Ipsum d.',
+            '' => 'Lorem Ipsum e.',
+        ],  DB::table('comments')->$pluckFn('content', 'tag')->toArray());
+
+        // Test null and numeric as key.
+        $this->assertSame([
+            1 => 'Lorem Ipsum a.',
+            0 => 'Lorem Ipsum b.',
+            null => 'Lorem Ipsum e.',
+        ],  DB::table('comments')->$pluckFn('content', 'votes')->toArray());
+
+        // Test null and numeric values with string keys.
+        $this->assertSame([
+            'Lorem Ipsum a.' => 1,
+            'Lorem Ipsum b.' => 0,
+            'Lorem Ipsum c.' => null,
+            'Lorem Ipsum d.' => null,
+            'Lorem Ipsum e.' => null,
+        ],  DB::table('comments')->$pluckFn('votes', 'content')->toArray());
+    }
+
+    public static function pluckProvider(): array
+    {
+        return [
+            ['pluck'],
+            ['pluckPDO'],
+        ];
     }
 }
