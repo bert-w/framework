@@ -456,15 +456,6 @@ class QueryBuilderTest extends DatabaseTestCase
             'Lorem Ipsum.' => 'Bar Post',
         ], DB::table('posts')->$pluckFn('title', 'content')->toArray());
 
-        // Test custom query calculations.
-        $this->assertSame([
-            2 => 'FOO POST',
-            4 => 'BAR POST',
-        ], DB::table('posts')->$pluckFn(
-            DB::raw('UPPER(title)'),
-            DB::raw('2 * id')
-        )->toArray());
-
         // Test null and empty string as key.
         $this->assertSame([
             'science' => 'Lorem Ipsum b.',
@@ -496,5 +487,17 @@ class QueryBuilderTest extends DatabaseTestCase
             ['pluck'],
             ['pluckPDO'],
         ];
+    }
+
+    public function testPluckPDORawExpressions(): void
+    {
+        // Test custom query calculations.
+        $this->assertSame([
+            2 => 'FOO POST',
+            4 => 'BAR POST',
+        ], DB::table('posts')->pluckPDO(
+            DB::raw('UPPER(title)'),
+            DB::raw('2 * id')
+        )->toArray());
     }
 }
