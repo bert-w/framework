@@ -115,9 +115,23 @@ class Connection implements ConnectionInterface
     /**
      * The default fetch mode of the connection.
      *
-     * @var int
+     * @var array
      */
-    protected $fetchMode = PDO::FETCH_OBJ;
+    protected $fetchMode = [PDO::FETCH_OBJ];
+
+    /**
+     * The fetch mode override for $statement->fetchAll() calls.
+     *
+     * @var array
+     */
+    protected $fetchAllArgs = [];
+
+    /**
+     * The fetch mode override for $statement->fetch() calls.
+     *
+     * @var array
+     */
+    protected $fetchArgs = [];
 
     /**
      * The number of active transactions.
@@ -420,7 +434,7 @@ class Connection implements ConnectionInterface
 
             $statement->execute();
 
-            return $statement->fetchAll();
+            return $statement->fetchAll(...$this->fetchAllArgs);
         });
     }
 
@@ -450,7 +464,7 @@ class Connection implements ConnectionInterface
             $sets = [];
 
             do {
-                $sets[] = $statement->fetchAll();
+                $sets[] = $statement->fetchAll(...$this->fetchAllArgs);
             } while ($statement->nextRowset());
 
             return $sets;
@@ -490,9 +504,87 @@ class Connection implements ConnectionInterface
             return $statement;
         });
 
-        while ($record = $statement->fetch()) {
+        while ($record = $statement->fetch(...$this->fetchArgs)) {
             yield $record;
         }
+    }
+
+    /**
+     * Set the arguments for the PDO fetch mode.
+     *
+     * @param  int  $mode
+     * @param  mixed  ...$args
+     * @return $this
+     */
+    public function setFetchMode($mode, ...$args)
+    {
+        $this->fetchMode = [$mode, ...$args];
+
+        return $this;
+    }
+
+    /**
+     * Reset the arguments for the PDO fetch mode.
+     *
+     * @return $this
+     */
+    public function resetFetchMode()
+    {
+        $this->fetchMode = [PDO::FETCH_OBJ];
+
+        return $this;
+    }
+
+    /**
+     * Set the arguments for calling $statement->fetchAll().
+     *
+     * @param  int  $mode
+     * @param  mixed  ...$args
+     * @return $this
+     */
+    public function setFetchAllArgs($mode, ...$args)
+    {
+        $this->fetchAllArgs = [$mode, ...$args];
+
+        return $this;
+    }
+
+    /**
+     * Reset the arguments for calling $statement->fetchAll().
+     *
+     * @return $this
+     */
+    public function resetFetchAllArgs()
+    {
+        $this->fetchAllArgs = [];
+
+        return $this;
+    }
+
+    /**
+     * Set the arguments for calling $statement->fetch().
+     *
+     * @param  int  $mode
+     * @param  mixed  ...$args
+     * @return $this
+     */
+    public function setFetchArgs($mode, ...$args)
+    {
+        $this->fetchArgs = [$mode, ...$args];
+
+        return $this;
+    }
+
+    /**
+     * Reset the arguments for calling $statement->fetch().
+     *
+     * @return $this
+     */
+    public function resetFetchArgs()
+    {
+        $this->fetchArgs = [];
+
+        return $this;
     }
 
     /**
@@ -503,7 +595,7 @@ class Connection implements ConnectionInterface
      */
     protected function prepared(PDOStatement $statement)
     {
-        $statement->setFetchMode($this->fetchMode);
+        $statement->setFetchMode(...$this->fetchMode);
 
         $this->event(new StatementPrepared($this, $statement));
 
