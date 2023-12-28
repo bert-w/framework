@@ -4,6 +4,7 @@ namespace Illuminate\Tests\Database;
 
 use Illuminate\Database\Capsule\Manager;
 use Illuminate\Database\Connection;
+use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\ForeignIdColumnDefinition;
 use Illuminate\Database\Schema\Grammars\SQLiteGrammar;
@@ -163,20 +164,21 @@ class DatabaseSQLiteSchemaGrammarTest extends TestCase
             $table->index(['name', 'email'], 'index1');
         });
 
-        $manager = $db->getConnection()->getDoctrineSchemaManager();
-        $details = $manager->introspectTable('prefix_users');
-        $this->assertTrue($details->hasIndex('index1'));
-        $this->assertFalse($details->hasIndex('index2'));
+        $indexes = array_column($schema->getIndexes('users'), 'name');
+
+        $this->assertContains('index1', $indexes);
+        $this->assertNotContains('index2', $indexes);
 
         $schema->table('users', function (Blueprint $table) {
             $table->renameIndex('index1', 'index2');
         });
 
-        $details = $manager->introspectTable('prefix_users');
-        $this->assertFalse($details->hasIndex('index1'));
-        $this->assertTrue($details->hasIndex('index2'));
+        $indexes = $schema->getIndexes('users');
 
-        $this->assertEquals(['name', 'email'], $details->getIndex('index2')->getUnquotedColumns());
+        $this->assertNotContains('index1', array_column($indexes, 'name'));
+        $this->assertTrue(collect($indexes)->contains(
+            fn ($index) => $index['name'] === 'index2' && $index['columns'] === ['name', 'email']
+        ));
     }
 
     public function testAddingPrimaryKey()
@@ -463,7 +465,7 @@ class DatabaseSQLiteSchemaGrammarTest extends TestCase
     public function testAddingFloat()
     {
         $blueprint = new Blueprint('users');
-        $blueprint->float('foo', 5, 2);
+        $blueprint->float('foo', 5);
         $statements = $blueprint->toSql($this->getConnection(), $this->getGrammar());
 
         $this->assertCount(1, $statements);
@@ -473,11 +475,11 @@ class DatabaseSQLiteSchemaGrammarTest extends TestCase
     public function testAddingDouble()
     {
         $blueprint = new Blueprint('users');
-        $blueprint->double('foo', 15, 8);
+        $blueprint->double('foo');
         $statements = $blueprint->toSql($this->getConnection(), $this->getGrammar());
 
         $this->assertCount(1, $statements);
-        $this->assertSame('alter table "users" add column "foo" float not null', $statements[0]);
+        $this->assertSame('alter table "users" add column "foo" double not null', $statements[0]);
     }
 
     public function testAddingDecimal()
@@ -886,6 +888,19 @@ class DatabaseSQLiteSchemaGrammarTest extends TestCase
             'alter table "products" add column "discounted_virtual" integer not null as ("price" - 5)',
         ];
         $this->assertSame($expected, $statements);
+    }
+
+    public function testAddingGeneratedColumnByExpression()
+    {
+        $blueprint = new Blueprint('products');
+        $blueprint->create();
+        $blueprint->integer('price');
+        $blueprint->integer('discounted_virtual')->virtualAs(new Expression('"price" - 5'));
+        $blueprint->integer('discounted_stored')->storedAs(new Expression('"price" - 5'));
+        $statements = $blueprint->toSql($this->getConnection(), $this->getGrammar());
+
+        $this->assertCount(1, $statements);
+        $this->assertSame('create table "products" ("price" integer not null, "discounted_virtual" integer as ("price" - 5), "discounted_stored" integer as ("price" - 5) stored)', $statements[0]);
     }
 
     public function testGrammarsAreMacroable()
