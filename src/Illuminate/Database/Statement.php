@@ -1,10 +1,13 @@
 <?php
 
-namespace Illuminate\Database\Query;
+namespace Illuminate\Database;
 
 use Illuminate\Support\Traits\Macroable;
 use PDOStatement;
 
+/**
+ * @mixin \PDOStatement
+ */
 class Statement
 {
     use Macroable {

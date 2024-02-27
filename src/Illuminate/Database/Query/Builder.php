@@ -15,6 +15,7 @@ use Illuminate\Database\Concerns\ExplainsQueries;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\FetchMode;
 use Illuminate\Database\Query\Grammars\Grammar;
 use Illuminate\Database\Query\Processors\Processor;
 use Illuminate\Pagination\Paginator;
@@ -230,6 +231,8 @@ class Builder implements BuilderContract
      * @var bool
      */
     public $useWritePdo = false;
+
+    public FetchMode $fetchMode;
 
     /**
      * Create a new query builder instance.
@@ -2737,9 +2740,10 @@ class Builder implements BuilderContract
      */
     public function get($columns = ['*'])
     {
-        return collect($this->onceWithColumns(Arr::wrap($columns), function () {
-            return $this->processor->processSelect($this, $this->runSelect());
-        }));
+        return collect((clone $this)
+            ->select(is_null($this->columns) ? Arr::wrap($columns) : $this->columns)
+            ->processor->processSelect($this, $this->runSelect())
+        );
     }
 
     /**
@@ -2750,7 +2754,7 @@ class Builder implements BuilderContract
     protected function runSelect()
     {
         return $this->connection->select(
-            $this->toSql(), $this->getBindings(), ! $this->useWritePdo
+            $this->toSql(), $this->getBindings(), ! $this->useWritePdo, $this->fetchMode
         );
     }
 
@@ -2971,86 +2975,11 @@ class Builder implements BuilderContract
      */
     public function pluck($column, $key = null)
     {
-        $mode = is_null($key) ? FetchMode::value() : FetchMode::keyValue();
+        $this->fetchMode(is_null($key) ? FetchMode::value() : FetchMode::keyValue());
 
-        return collect($this->onceWithColumns(
-            is_null($key) ? [$column] : [$key, $column],
-            fn () => $this->onceWithFetchAllArgs([$mode, is_null($key) ? 0 : 1], function () {
-                return $this->processor->processSelect(
-                    $this, $this->runSelect()
-                );
-            }), true));
-    }
-
-    /**
-     * Strip off the table name or alias from a column identifier.
-     *
-     * @param  string  $column
-     * @return string|null
-     */
-    protected function stripTableForPluck($column)
-    {
-        if (is_null($column)) {
-            return $column;
-        }
-
-        $columnString = $column instanceof ExpressionContract
-            ? $this->grammar->getValue($column)
-            : $column;
-
-        $separator = str_contains(strtolower($columnString), ' as ') ? ' as ' : '\.';
-
-        return last(preg_split('~'.$separator.'~i', $columnString));
-    }
-
-    /**
-     * Retrieve column values from rows represented as objects.
-     *
-     * @param  array  $queryResult
-     * @param  string  $column
-     * @param  string  $key
-     * @return \Illuminate\Support\Collection
-     */
-    protected function pluckFromObjectColumn($queryResult, $column, $key)
-    {
-        $results = [];
-
-        if (is_null($key)) {
-            foreach ($queryResult as $row) {
-                $results[] = $row->$column;
-            }
-        } else {
-            foreach ($queryResult as $row) {
-                $results[$row->$key] = $row->$column;
-            }
-        }
-
-        return collect($results);
-    }
-
-    /**
-     * Retrieve column values from rows represented as arrays.
-     *
-     * @param  array  $queryResult
-     * @param  string  $column
-     * @param  string  $key
-     * @return \Illuminate\Support\Collection
-     */
-    protected function pluckFromArrayColumn($queryResult, $column, $key)
-    {
-        $results = [];
-
-        if (is_null($key)) {
-            foreach ($queryResult as $row) {
-                $results[] = $row[$column];
-            }
-        } else {
-            foreach ($queryResult as $row) {
-                $results[$row[$key]] = $row[$column];
-            }
-        }
-
-        return collect($results);
+        return collect((clone $this)
+            ->select(is_null($key) ? [$column] : [$key, $column])
+            ->processor->processSelect($this, $this->runSelect()));
     }
 
     /**
@@ -3256,47 +3185,6 @@ class Builder implements BuilderContract
         }
 
         return $this;
-    }
-
-    /**
-     * Execute the given callback while selecting the given columns.
-     *
-     * After running the callback, the columns are reset to the original value.
-     *
-     * @param  array  $columns
-     * @param  callable  $callback
-     * @param  bool  $force
-     * @return mixed
-     */
-    protected function onceWithColumns($columns, $callback, $force = false)
-    {
-        $original = $this->columns;
-
-        if (is_null($original) || $force) {
-            $this->columns = $columns;
-        }
-
-        $result = $callback();
-
-        $this->columns = $original;
-
-        return $result;
-    }
-
-    /**
-     * Execute the given callback while setting a specific PDO fetch mode.
-     *
-     * After running the callback, the fetch mode is reverted.
-     *
-     * @param  mixed  $fetchAllArgs
-     * @param  Closure  $callback
-     * @return \Illuminate\Support\HigherOrderTapProxy|mixed
-     */
-    protected function onceWithFetchAllArgs($fetchAllArgs, Closure $callback)
-    {
-        $this->connection->setFetchAllArgs(...Arr::wrap($fetchAllArgs));
-
-        return tap($callback(), fn () => $this->connection->resetFetchAllArgs());
     }
 
     /**
@@ -3675,6 +3563,20 @@ class Builder implements BuilderContract
     public function raw($value)
     {
         return $this->connection->raw($value);
+    }
+
+
+    /**
+     * Set the fetch mode for the query.
+     *
+     * @param  FetchMode  $fetchMode
+     * @return $this
+     */
+    public function fetchMode(FetchMode $fetchMode)
+    {
+        $this->fetchMode = $fetchMode;
+
+        return $this;
     }
 
     /**

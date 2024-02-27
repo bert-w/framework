@@ -1,6 +1,6 @@
 <?php
 
-namespace Illuminate\Database\Query;
+namespace Illuminate\Database;
 
 use PDO;
 
