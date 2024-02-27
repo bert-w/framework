@@ -2,19 +2,27 @@
 
 namespace Illuminate\Foundation\Console;
 
+use Composer\InstalledVersions;
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Process;
 use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Process\PhpExecutableFinder;
+
+use function Laravel\Prompts\confirm;
 
 #[AsCommand(name: 'install:broadcasting')]
 class BroadcastingInstallCommand extends Command
 {
+    use InteractsWithComposerPackages;
+
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
     protected $signature = 'install:broadcasting
+                    {--composer=global : Absolute path to the Composer binary which should be used to install packages}
                     {--force : Overwrite any existing broadcasting routes file}';
 
     /**
@@ -31,6 +39,8 @@ class BroadcastingInstallCommand extends Command
      */
     public function handle()
     {
+        $this->call('config:publish', ['name' => 'broadcasting']);
+
         // Install channel routes file...
         if (file_exists($broadcastingRoutesPath = $this->laravel->basePath('routes/channels.php')) &&
             ! $this->option('force')) {
@@ -56,10 +66,12 @@ class BroadcastingInstallCommand extends Command
             if (! str_contains($bootstrapScript, 'echo.js')) {
                 file_put_contents(
                     $bootstrapScriptPath,
-                    $bootstrapScript.PHP_EOL.file_get_contents(__DIR__.'/stubs/echo-bootstrap-js.stub')
+                    trim($bootstrapScript.PHP_EOL.file_get_contents(__DIR__.'/stubs/echo-bootstrap-js.stub')).PHP_EOL,
                 );
             }
         }
+
+        $this->installReverb();
     }
 
     /**
@@ -90,5 +102,37 @@ class BroadcastingInstallCommand extends Command
 
             return;
         }
+    }
+
+    /**
+     * Install Laravel Reverb into the application if desired.
+     *
+     * @return void
+     */
+    protected function installReverb()
+    {
+        if (InstalledVersions::isInstalled('laravel/reverb')) {
+            return;
+        }
+
+        $install = confirm('Would you like to install Laravel Reverb?', default: true);
+
+        if (! $install) {
+            return;
+        }
+
+        $this->requireComposerPackages($this->option('composer'), [
+            'laravel/reverb:@beta',
+        ]);
+
+        $php = (new PhpExecutableFinder())->find(false) ?: 'php';
+
+        Process::run([
+            $php,
+            defined('ARTISAN_BINARY') ? ARTISAN_BINARY : 'artisan',
+            'reverb:install',
+        ]);
+
+        $this->components->info('Reverb installed successfully.');
     }
 }

@@ -9,6 +9,7 @@ use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Queue\Events\JobQueueing;
 use Illuminate\Support\Arr;
 use Illuminate\Support\InteractsWithTime;
 use Illuminate\Support\Str;
@@ -142,7 +143,7 @@ abstract class Queue
             'uuid' => (string) Str::uuid(),
             'displayName' => $this->getDisplayName($job),
             'job' => 'Illuminate\Queue\CallQueuedHandler@call',
-            'maxTries' => $job->tries ?? null,
+            'maxTries' => $this->getJobTries($job) ?? null,
             'maxExceptions' => $job->maxExceptions ?? null,
             'failOnTimeout' => $job->failOnTimeout ?? false,
             'backoff' => $this->getJobBackoff($job),
@@ -176,6 +177,27 @@ abstract class Queue
     {
         return method_exists($job, 'displayName')
                         ? $job->displayName() : get_class($job);
+    }
+
+    /**
+     * Get the maximum number of attempts for an object-based queue handler.
+     *
+     * @param  mixed  $job
+     * @return mixed
+     */
+    public function getJobTries($job)
+    {
+        if (! method_exists($job, 'tries') && ! isset($job->tries)) {
+            return;
+        }
+
+        if (isset($job->tries)) {
+            return $job->tries;
+        }
+
+        if (method_exists($job, 'tries') && ! is_null($job->tries())) {
+            return $job->tries();
+        }
     }
 
     /**
@@ -305,16 +327,20 @@ abstract class Queue
         if ($this->shouldDispatchAfterCommit($job) &&
             $this->container->bound('db.transactions')) {
             return $this->container->make('db.transactions')->addCallback(
-                function () use ($payload, $queue, $delay, $callback, $job) {
-                    return tap($callback($payload, $queue, $delay), function ($jobId) use ($job, $payload) {
-                        $this->raiseJobQueuedEvent($jobId, $job, $payload);
+                function () use ($queue, $job, $payload, $delay, $callback) {
+                    $this->raiseJobQueueingEvent($queue, $job, $payload, $delay);
+
+                    return tap($callback($payload, $queue, $delay), function ($jobId) use ($queue, $job, $payload, $delay) {
+                        $this->raiseJobQueuedEvent($queue, $jobId, $job, $payload, $delay);
                     });
                 }
             );
         }
 
-        return tap($callback($payload, $queue, $delay), function ($jobId) use ($job, $payload) {
-            $this->raiseJobQueuedEvent($jobId, $job, $payload);
+        $this->raiseJobQueueingEvent($queue, $job, $payload, $delay);
+
+        return tap($callback($payload, $queue, $delay), function ($jobId) use ($queue, $job, $payload, $delay) {
+            $this->raiseJobQueuedEvent($queue, $jobId, $job, $payload, $delay);
         });
     }
 
@@ -342,17 +368,39 @@ abstract class Queue
     }
 
     /**
+     * Raise the job queueing event.
+     *
+     * @param  string  $queue
+     * @param  \Closure|string|object  $job
+     * @param  string  $payload
+     * @param  \DateTimeInterface|\DateInterval|int|null  $delay
+     * @return void
+     */
+    protected function raiseJobQueueingEvent($queue, $job, $payload, $delay)
+    {
+        if ($this->container->bound('events')) {
+            $delay = ! is_null($delay) ? $this->secondsUntil($delay) : $delay;
+
+            $this->container['events']->dispatch(new JobQueueing($this->connectionName, $queue, $job, $payload, $delay));
+        }
+    }
+
+    /**
      * Raise the job queued event.
      *
+     * @param  string  $queue
      * @param  string|int|null  $jobId
      * @param  \Closure|string|object  $job
      * @param  string  $payload
+     * @param  \DateTimeInterface|\DateInterval|int|null  $delay
      * @return void
      */
-    protected function raiseJobQueuedEvent($jobId, $job, $payload)
+    protected function raiseJobQueuedEvent($queue, $jobId, $job, $payload, $delay)
     {
         if ($this->container->bound('events')) {
-            $this->container['events']->dispatch(new JobQueued($this->connectionName, $jobId, $job, $payload));
+            $delay = ! is_null($delay) ? $this->secondsUntil($delay) : $delay;
+
+            $this->container['events']->dispatch(new JobQueued($this->connectionName, $queue, $jobId, $job, $payload, $delay));
         }
     }
 

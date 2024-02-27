@@ -60,6 +60,28 @@ class PostgresBuilder extends Builder
     }
 
     /**
+     * Determine if the given view exists.
+     *
+     * @param  string  $view
+     * @return bool
+     */
+    public function hasView($view)
+    {
+        [$schema, $view] = $this->parseSchemaAndTable($view);
+
+        $view = $this->connection->getTablePrefix().$view;
+
+        foreach ($this->getViews() as $value) {
+            if (strtolower($view) === strtolower($value['name'])
+                && strtolower($schema) === strtolower($value['schema'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Get the user-defined types that belong to the database.
      *
      * @return array
@@ -68,42 +90,6 @@ class PostgresBuilder extends Builder
     {
         return $this->connection->getPostProcessor()->processTypes(
             $this->connection->selectFromWriteConnection($this->grammar->compileTypes())
-        );
-    }
-
-    /**
-     * Get all of the table names for the database.
-     *
-     * @deprecated Will be removed in a future Laravel version.
-     *
-     * @return array
-     */
-    public function getAllTables()
-    {
-        return $this->connection->select(
-            $this->grammar->compileGetAllTables(
-                $this->parseSearchPath(
-                    $this->connection->getConfig('search_path') ?: $this->connection->getConfig('schema')
-                )
-            )
-        );
-    }
-
-    /**
-     * Get all of the view names for the database.
-     *
-     * @deprecated Will be removed in a future Laravel version.
-     *
-     * @return array
-     */
-    public function getAllViews()
-    {
-        return $this->connection->select(
-            $this->grammar->compileGetAllViews(
-                $this->parseSearchPath(
-                    $this->connection->getConfig('search_path') ?: $this->connection->getConfig('schema')
-                )
-            )
         );
     }
 
@@ -163,20 +149,6 @@ class PostgresBuilder extends Builder
 
         $this->connection->statement(
             $this->grammar->compileDropAllViews($views)
-        );
-    }
-
-    /**
-     * Get all of the type names for the database.
-     *
-     * @deprecated Will be removed in a future Laravel version.
-     *
-     * @return array
-     */
-    public function getAllTypes()
-    {
-        return $this->connection->select(
-            $this->grammar->compileGetAllTypes()
         );
     }
 
@@ -289,7 +261,7 @@ class PostgresBuilder extends Builder
         if (count($parts) > 2) {
             $database = $parts[0];
 
-            throw new InvalidArgumentException("Using 3-parts reference is not supported, you may use `Schema::connection('$database')` instead.");
+            throw new InvalidArgumentException("Using three-part reference is not supported, you may use `Schema::connection('$database')` instead.");
         }
 
         // We will use the default schema unless the schema has been specified in the

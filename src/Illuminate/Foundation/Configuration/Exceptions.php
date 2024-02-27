@@ -4,6 +4,7 @@ namespace Illuminate\Foundation\Configuration;
 
 use Closure;
 use Illuminate\Foundation\Exceptions\Handler;
+use Illuminate\Support\Arr;
 
 class Exceptions
 {
@@ -77,7 +78,7 @@ class Exceptions
      * @param  \Psr\Log\LogLevel::*  $level
      * @return $this
      */
-    public function level($type, $level)
+    public function level(string $type, string $level)
     {
         $this->handler->level($type, $level);
 
@@ -100,12 +101,14 @@ class Exceptions
     /**
      * Indicate that the given exception type should not be reported.
      *
-     * @param  string  $class
+     * @param  array|string  $class
      * @return $this
      */
-    public function dontReport(string $class)
+    public function dontReport(array|string $class)
     {
-        $this->handler->dontReport($class);
+        foreach (Arr::wrap($class) as $exceptionClass) {
+            $this->handler->dontReport($exceptionClass);
+        }
 
         return $this;
     }
@@ -128,9 +131,22 @@ class Exceptions
      * @param  array|string  $attributes
      * @return $this
      */
-    public function dontFlash($attributes)
+    public function dontFlash(array|string $attributes)
     {
         $this->handler->dontFlash($attributes);
+
+        return $this;
+    }
+
+    /**
+     * Indicate that the given exception class should not be ignored.
+     *
+     * @param  array<int, class-string<\Throwable>>|class-string<\Throwable>  $class
+     * @return $this
+     */
+    public function stopIgnoring(array|string $class)
+    {
+        $this->handler->stopIgnoring($class);
 
         return $this;
     }

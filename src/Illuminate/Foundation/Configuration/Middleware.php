@@ -2,9 +2,18 @@
 
 namespace Illuminate\Foundation\Configuration;
 
+use Closure;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Auth\Middleware\RedirectIfAuthenticated;
+use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
+use Illuminate\Foundation\Http\Middleware\PreventRequestsDuringMaintenance;
+use Illuminate\Foundation\Http\Middleware\TrimStrings;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Http\Middleware\TrustHosts;
+use Illuminate\Http\Middleware\TrustProxies;
+use Illuminate\Routing\Middleware\ValidateSignature;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Support\Arr;
 
@@ -15,7 +24,7 @@ class Middleware
      *
      * @var array
      */
-    protected $global;
+    protected $global = [];
 
     /**
      * The middleware that should be prepended to the global middleware stack.
@@ -111,29 +120,16 @@ class Middleware
     /**
      * Indicates if Redis throttling should be applied.
      *
-     * @var array
+     * @var bool
      */
     protected $throttleWithRedis = false;
 
     /**
-     * The default middleware aliases.
+     * Indicates if sessions should be authenticated for the "web" middleware group.
      *
-     * @var array
+     * @var bool
      */
-    protected $aliases = [
-        'auth' => \Illuminate\Auth\Middleware\Authenticate::class,
-        'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
-        'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,
-        'cache.headers' => \Illuminate\Http\Middleware\SetCacheHeaders::class,
-        'can' => \Illuminate\Auth\Middleware\Authorize::class,
-        'guest' => \Illuminate\Auth\Middleware\RedirectIfAuthenticated::class,
-        'password.confirm' => \Illuminate\Auth\Middleware\RequirePassword::class,
-        'precognitive' => \Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests::class,
-        'signed' => \Illuminate\Routing\Middleware\ValidateSignature::class,
-        'subscribed' => \Spark\Http\Middleware\VerifyBillableIsSubscribed::class,
-        'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
-        'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
-    ];
+    protected $authenticatedSessions = false;
 
     /**
      * The custom middleware aliases.
@@ -141,6 +137,13 @@ class Middleware
      * @var array
      */
     protected $customAliases = [];
+
+    /**
+     * The custom middleware priority definition.
+     *
+     * @var array
+     */
+    protected $priority = [];
 
     /**
      * Prepend middleware to the application's global middleware stack.
@@ -258,8 +261,8 @@ class Middleware
     public function appendToGroup(string $group, array|string $middleware)
     {
         $this->groupAppends[$group] = array_merge(
-            Arr::wrap($middleware),
-            $this->groupAppends[$group] ?? []
+            $this->groupAppends[$group] ?? [],
+            Arr::wrap($middleware)
         );
 
         return $this;
@@ -387,6 +390,19 @@ class Middleware
     }
 
     /**
+     * Define the middleware priority for the application.
+     *
+     * @param  array  $priority
+     * @return $this
+     */
+    public function priority(array $priority)
+    {
+        $this->priority = $priority;
+
+        return $this;
+    }
+
+    /**
      * Get the global middleware.
      *
      * @return array
@@ -425,14 +441,15 @@ class Middleware
     public function getMiddlewareGroups()
     {
         $middleware = [
-            'web' => [
+            'web' => array_values(array_filter([
                 \Illuminate\Cookie\Middleware\EncryptCookies::class,
                 \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
                 \Illuminate\Session\Middleware\StartSession::class,
                 \Illuminate\View\Middleware\ShareErrorsFromSession::class,
                 \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
                 \Illuminate\Routing\Middleware\SubstituteBindings::class,
-            ],
+                $this->authenticatedSessions ? 'auth.session' : null,
+            ])),
 
             'api' => array_values(array_filter([
                 $this->statefulApi ? \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class : null,
@@ -473,29 +490,106 @@ class Middleware
     }
 
     /**
-     * Configure the behavior of the authentication middleware.
+     * Configure where guests are redirected by the authentication middleware.
      *
-     * @param  callable  $redirectTo
+     * @param  callable|string  $redirect
      * @return $this
      */
-    public function auth(callable $redirectTo)
+    public function redirectGuestsTo(callable|string $redirect)
     {
-        Authenticate::redirectUsing($redirectTo);
-        AuthenticateSession::redirectUsing($redirectTo);
-        AuthenticationException::redirectUsing($redirectTo);
+        return $this->redirectTo(guests: $redirect);
+    }
+
+    /**
+     * Configure where users are redirected by the authentication and guest middleware.
+     *
+     * @param  callable|string  $guests
+     * @param  callable|string  $users
+     * @return $this
+     */
+    public function redirectTo(callable|string $guests = null, callable|string $users = null)
+    {
+        $guests = is_string($guests) ? fn () => $guests : $guests;
+        $users = is_string($users) ? fn () => $users : $users;
+
+        if ($guests) {
+            Authenticate::redirectUsing($guests);
+            AuthenticateSession::redirectUsing($guests);
+            AuthenticationException::redirectUsing($guests);
+        }
+
+        if ($users) {
+            RedirectIfAuthenticated::redirectUsing($users);
+        }
 
         return $this;
     }
 
     /**
-     * Configure the behavior of the "guest" middleware.
+     * Configure the cookie encryption middleware.
      *
-     * @param  callable  $redirectTo
+     * @param  array<int, string>  $except
      * @return $this
      */
-    public function guest(callable $redirectTo)
+    public function encryptCookies(array $except = [])
     {
-        RedirectIfAuthenticated::redirectUsing($redirectTo);
+        EncryptCookies::except($except);
+
+        return $this;
+    }
+
+    /**
+     * Configure the CSRF token validation middleware.
+     *
+     * @param  array  $except
+     * @return $this
+     */
+    public function validateCsrfTokens(array $except = [])
+    {
+        ValidateCsrfToken::except($except);
+
+        return $this;
+    }
+
+    /**
+     * Configure the URL signature validation middleware.
+     *
+     * @param  array  $except
+     * @return $this
+     */
+    public function validateSignatures(array $except = [])
+    {
+        ValidateSignature::except($except);
+
+        return $this;
+    }
+
+    /**
+     * Configure the empty string conversion middleware.
+     *
+     * @param  array<int, (\Closure(\Illuminate\Http\Request): bool)>  $except
+     * @return $this
+     */
+    public function convertEmptyStringsToNull(array $except = [])
+    {
+        collect($except)->each(fn (Closure $callback) => ConvertEmptyStringsToNull::skipWhen($callback));
+
+        return $this;
+    }
+
+    /**
+     * Configure the string trimming middleware.
+     *
+     * @param  array<int, (\Closure(\Illuminate\Http\Request): bool)|string>  $except
+     * @return $this
+     */
+    public function trimStrings(array $except = [])
+    {
+        [$skipWhen, $except] = collect($except)->partition(fn ($value) => $value instanceof Closure);
+
+        $skipWhen->each(fn (Closure $callback) => TrimStrings::skipWhen($callback));
+
+        TrimStrings::except($except->all());
 
         return $this;
     }
@@ -503,11 +597,50 @@ class Middleware
     /**
      * Indicate that the trusted host middleware should be enabled.
      *
+     * @param  array<int, string>|null  $at
+     * @param  bool  $subdomains
      * @return $this
      */
-    public function withTrustedHosts()
+    public function trustHosts(array $at = null, bool $subdomains = true)
     {
         $this->trustHosts = true;
+
+        if (is_array($at)) {
+            TrustHosts::at($at, $subdomains);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Configure the trusted proxies for the application.
+     *
+     * @param  array<int, string>|string|null  $at
+     * @param  int|null  $headers
+     * @return $this
+     */
+    public function trustProxies(array|string $at = null, int $headers = null)
+    {
+        if (! is_null($at)) {
+            TrustProxies::at($at);
+        }
+
+        if (! is_null($headers)) {
+            TrustProxies::withHeaders($headers);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Configure the middleware that prevents requests during maintenance mode.
+     *
+     * @param  array<int, string>  $except
+     * @return $this
+     */
+    public function preventRequestsDuringMaintenance(array $except = [])
+    {
+        PreventRequestsDuringMaintenance::except($except);
 
         return $this;
     }
@@ -517,7 +650,7 @@ class Middleware
      *
      * @return $this
      */
-    public function withStatefulApi()
+    public function statefulApi()
     {
         $this->statefulApi = true;
 
@@ -531,7 +664,7 @@ class Middleware
      * @param  bool  $redis
      * @return $this
      */
-    public function withThrottledApi($limiter = 'api', $redis = false)
+    public function throttleApi($limiter = 'api', $redis = false)
     {
         $this->apiLimiter = $limiter;
 
@@ -550,6 +683,18 @@ class Middleware
     public function throttleWithRedis()
     {
         $this->throttleWithRedis = true;
+
+        return $this;
+    }
+
+    /**
+     * Indicate that sessions should be authenticated for the "web" middleware group.
+     *
+     * @return $this
+     */
+    public function authenticateSessions()
+    {
+        $this->authenticatedSessions = true;
 
         return $this;
     }
@@ -597,5 +742,15 @@ class Middleware
                 : \Illuminate\Routing\Middleware\ThrottleRequests::class,
             'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
         ];
+    }
+
+    /**
+     * Get the middleware priority for the application.
+     *
+     * @return array
+     */
+    public function getMiddlewarePriority()
+    {
+        return $this->priority;
     }
 }

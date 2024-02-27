@@ -302,11 +302,13 @@ class Kernel implements KernelContract
     /**
      * Get the name of the cache store that should manage scheduling mutexes.
      *
-     * @return string
+     * @return string|null
      */
     protected function scheduleCache()
     {
-        return $this->app['config']->get('cache.schedule_store', Env::get('SCHEDULE_CACHE_DRIVER'));
+        return $this->app['config']->get('cache.schedule_store', Env::get('SCHEDULE_CACHE_DRIVER', function () {
+            return Env::get('SCHEDULE_CACHE_STORE');
+        }));
     }
 
     /**
@@ -361,7 +363,7 @@ class Kernel implements KernelContract
 
         $namespace = $this->app->getNamespace();
 
-        foreach ((new Finder)->in($paths)->files() as $file) {
+        foreach (Finder::create()->in($paths)->files() as $file) {
             $command = $this->commandClassFromFile($file, $namespace);
 
             if (is_subclass_of($command, Command::class) &&

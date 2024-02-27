@@ -7,14 +7,24 @@ use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Bootstrap\RegisterProviders;
+use Illuminate\Foundation\Events\DiagnosingHealth;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as AppEventServiceProvider;
 use Illuminate\Foundation\Support\Providers\RouteServiceProvider as AppRouteServiceProvider;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\View;
 use Laravel\Folio\Folio;
 
 class ApplicationBuilder
 {
+    /**
+     * The service provider that are marked for registration.
+     *
+     * @var array
+     */
+    protected array $pendingProviders = [];
+
     /**
      * The Folio / page middleware that have been defined by the user.
      *
@@ -71,13 +81,22 @@ class ApplicationBuilder
     /**
      * Register the core event service provider for the application.
      *
+     * @param  array  $discover
      * @return $this
      */
-    public function withEvents()
+    public function withEvents(array $discover = [])
     {
-        $this->app->booting(function () {
-            $this->app->register(AppEventServiceProvider::class);
-        });
+        if (count($discover) > 0) {
+            AppEventServiceProvider::setEventDiscoveryPaths($discover);
+        }
+
+        if (! isset($this->pendingProviders[AppEventServiceProvider::class])) {
+            $this->app->booting(function () {
+                $this->app->register(AppEventServiceProvider::class);
+            });
+        }
+
+        $this->pendingProviders[AppEventServiceProvider::class] = true;
 
         return $this;
     }
@@ -120,17 +139,18 @@ class ApplicationBuilder
         ?string $commands = null,
         ?string $channels = null,
         ?string $pages = null,
+        ?string $health = null,
         string $apiPrefix = 'api',
         ?callable $then = null)
     {
-        if (is_null($using) && (is_string($web) || is_string($api))) {
-            $using = $this->buildRoutingCallback($web, $api, $pages, $apiPrefix, $then);
+        if (is_null($using) && (is_string($web) || is_string($api) || is_string($pages) || is_string($health)) || is_callable($then)) {
+            $using = $this->buildRoutingCallback($web, $api, $pages, $health, $apiPrefix, $then);
         }
 
         AppRouteServiceProvider::loadRoutesUsing($using);
 
         $this->app->booting(function () {
-            $this->app->register(AppRouteServiceProvider::class);
+            $this->app->register(AppRouteServiceProvider::class, force: true);
         });
 
         if (is_string($commands) && realpath($commands) !== false) {
@@ -150,6 +170,7 @@ class ApplicationBuilder
      * @param  string|null  $web
      * @param  string|null  $api
      * @param  string|null  $pages
+     * @param  string|null  $health
      * @param  string  $apiPrefix
      * @param  callable|null  $then
      * @return \Closure
@@ -157,12 +178,21 @@ class ApplicationBuilder
     protected function buildRoutingCallback(?string $web,
         ?string $api,
         ?string $pages,
+        ?string $health,
         string $apiPrefix,
         ?callable $then)
     {
-        return function () use ($web, $api, $pages, $apiPrefix, $then) {
+        return function () use ($web, $api, $pages, $health, $apiPrefix, $then) {
             if (is_string($api) && realpath($api) !== false) {
                 Route::middleware('api')->prefix($apiPrefix)->group($api);
+            }
+
+            if (is_string($health)) {
+                Route::middleware('web')->get($health, function () {
+                    Event::dispatch(new DiagnosingHealth);
+
+                    return View::file(__DIR__.'/../resources/health-up.blade.php');
+                });
             }
 
             if (is_string($web) && realpath($web) !== false) {
@@ -176,7 +206,7 @@ class ApplicationBuilder
             }
 
             if (is_callable($then)) {
-                $then();
+                $then($this->app);
             }
         };
     }
@@ -184,21 +214,27 @@ class ApplicationBuilder
     /**
      * Register the global middleware, middleware groups, and middleware aliases for the application.
      *
-     * @param  callable  $callback
+     * @param  callable|null  $callback
      * @return $this
      */
-    public function withMiddleware(callable $callback)
+    public function withMiddleware(?callable $callback = null)
     {
         $this->app->afterResolving(HttpKernel::class, function ($kernel) use ($callback) {
             $middleware = (new Middleware)
-                ->auth(redirectTo: fn () => route('login'));
+                ->redirectGuestsTo(fn () => route('login'));
 
-            $callback($middleware);
+            if (! is_null($callback)) {
+                $callback($middleware);
+            }
 
             $this->pageMiddleware = $middleware->getPageMiddleware();
             $kernel->setGlobalMiddleware($middleware->getGlobalMiddleware());
             $kernel->setMiddlewareGroups($middleware->getMiddlewareGroups());
             $kernel->setMiddlewareAliases($middleware->getMiddlewareAliases());
+
+            if ($priorities = $middleware->getMiddlewarePriority()) {
+                $kernel->setMiddlewarePriority($priorities);
+            }
         });
 
         return $this;
@@ -296,6 +332,19 @@ class ApplicationBuilder
                 }
             }
         });
+    }
+
+    /**
+     * Register a callback to be invoked when the application's service providers are registered.
+     *
+     * @param  callable  $callback
+     * @return $this
+     */
+    public function registered(callable $callback)
+    {
+        $this->app->registered($callback);
+
+        return $this;
     }
 
     /**

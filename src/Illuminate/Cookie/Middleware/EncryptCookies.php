@@ -111,7 +111,7 @@ class EncryptCookies
     {
         return is_array($value)
                     ? $this->validateArray($key, $value)
-                    : CookieValuePrefix::validate($key, $value, $this->encrypter->getKey());
+                    : CookieValuePrefix::validate($key, $value, $this->encrypter->getAllKeys());
     }
 
     /**
@@ -239,5 +239,17 @@ class EncryptCookies
     public static function serialized($name)
     {
         return static::$serialize;
+    }
+
+    /**
+     * Flush the middleware's global state.
+     *
+     * @return void
+     */
+    public static function flushState()
+    {
+        static::$neverEncrypt = [];
+
+        static::$serialize = false;
     }
 }
