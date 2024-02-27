@@ -17,8 +17,10 @@ use Illuminate\Database\Events\TransactionCommitting;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Query\Expression;
+use Illuminate\Database\Query\FetchMode;
 use Illuminate\Database\Query\Grammars\Grammar as QueryGrammar;
 use Illuminate\Database\Query\Processors\Processor;
+use Illuminate\Database\Query\Statement;
 use Illuminate\Database\Schema\Builder as SchemaBuilder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\InteractsWithTime;
@@ -419,15 +421,16 @@ class Connection implements ConnectionInterface
             // For select statements, we'll simply execute the query and return an array
             // of the database result set. Each element in the array will be a single
             // row from the database table, and will either be an array or objects.
-            $statement = $this->prepared(
+            $statement = new Statement($this->prepared(
                 $this->getPdoForSelect($useReadPdo)->prepare($query)
-            );
+            ));
 
-            $this->bindValues($statement, $this->prepareBindings($bindings));
+            // @TODO move to statement obj
+            $this->bindValues($statement->statement(), $this->prepareBindings($bindings));
 
             $statement->execute();
 
-            return $statement->fetchAll(...$this->fetchAllArgs);
+            return $statement->fetchAll(FetchMode::keyValue());
         });
     }
 
