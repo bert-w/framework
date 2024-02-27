@@ -416,30 +416,27 @@ class QueryBuilderTest extends DatabaseTestCase
         $this->assertSame('Bar Post', $results[1]);
         $this->assertCount(3, DB::getQueryLog());
     }
-
-
-    #[DataProvider('pluckProvider')]
-    public function testPluck(string $pluckFn): void
+    public function testPluck(): void
     {
         // Test SELECT override, since pluck will take the first column.
         $this->assertSame([
             'Foo Post',
             'Bar Post',
-        ], DB::table('posts')->select(['content', 'id', 'title'])->$pluckFn('title')->toArray());
+        ], DB::table('posts')->select(['content', 'id', 'title'])->pluck('title')->toArray());
 
         // Test without SELECT override.
         $this->assertSame([
             'Foo Post',
             'Bar Post',
-        ], DB::table('posts')->$pluckFn('title')->toArray());
+        ], DB::table('posts')->pluck('title')->toArray());
 
         // Test specific key.
         $this->assertSame([
             1 => 'Foo Post',
             2 => 'Bar Post',
-        ], DB::table('posts')->$pluckFn('title', 'id')->toArray());
+        ], DB::table('posts')->pluck('title', 'id')->toArray());
 
-        $results = DB::table('posts')->$pluckFn('title', 'created_at');
+        $results = DB::table('posts')->pluck('title', 'created_at');
 
         // Test timestamps (truncates RDBMS differences).
         $this->assertSame([
@@ -454,7 +451,7 @@ class QueryBuilderTest extends DatabaseTestCase
         // Test duplicate keys (a match will override a previous match).
         $this->assertSame([
             'Lorem Ipsum.' => 'Bar Post',
-        ], DB::table('posts')->$pluckFn('title', 'content')->toArray());
+        ], DB::table('posts')->pluck('title', 'content')->toArray());
 
         // Test null and empty string as key.
         $this->assertSame([
@@ -462,16 +459,14 @@ class QueryBuilderTest extends DatabaseTestCase
             'entertainment' => 'Lorem Ipsum c.',
             null => 'Lorem Ipsum d.',
             '' => 'Lorem Ipsum e.',
-        ],  DB::table('comments')->$pluckFn('content', 'tag')->toArray());
+        ],  DB::table('comments')->pluck('content', 'tag')->toArray());
 
         // Test null and numeric as key.
         $this->assertSame([
             1 => 'Lorem Ipsum a.',
             0 => 'Lorem Ipsum b.',
             null => 'Lorem Ipsum e.',
-        ],  DB::table('comments')->$pluckFn('content', 'votes')->toArray());
-
-
+        ],  DB::table('comments')->pluck('content', 'votes')->toArray());
 
         if ($this->driver !== 'sqlsrv') {
             // Skip test for MS SQL Server since integers are returned as strings unless
@@ -484,25 +479,14 @@ class QueryBuilderTest extends DatabaseTestCase
                 'Lorem Ipsum c.' => null,
                 'Lorem Ipsum d.' => null,
                 'Lorem Ipsum e.' => null,
-            ],  DB::table('comments')->$pluckFn('votes', 'content')->toArray());
+            ],  DB::table('comments')->pluck('votes', 'content')->toArray());
         }
-    }
 
-    public static function pluckProvider(): array
-    {
-        return [
-            ['pluck'],
-            ['pluckPDO'],
-        ];
-    }
-
-    public function testPluckPDORawExpressions(): void
-    {
         // Test custom query calculations.
         $this->assertSame([
             2 => 'FOO POST',
             4 => 'BAR POST',
-        ], DB::table('posts')->pluckPDO(
+        ], DB::table('posts')->pluck(
             DB::raw('UPPER(title)'),
             DB::raw('2 * id')
         )->toArray());
