@@ -2812,10 +2812,11 @@ class Builder implements BuilderContract
      */
     public function get($columns = ['*'])
     {
-        $items = collect((clone $this)
-            ->select(is_null($this->columns) ? Arr::wrap($columns) : $this->columns)
-            ->processor->processSelect($this, $this->runSelect())
-        );
+        $clone = $this->clone();
+
+        $clone->columns ??= Arr::wrap($columns);
+
+        $items = collect($clone->processor->processSelect($clone, $clone->runSelect()));
 
         return isset($this->groupLimit)
             ? $this->withoutGroupLimitKeys($items)
@@ -3079,9 +3080,11 @@ class Builder implements BuilderContract
     {
         $this->fetchMode(is_null($key) ? FetchMode::value() : FetchMode::keyValue());
 
-        return collect((clone $this)
-            ->select(is_null($key) ? [$column] : [$key, $column])
-            ->processor->processSelect($this, $this->runSelect()));
+        $clone = $this->clone();
+
+        $clone->columns = is_null($key) ? [$column] : [$key, $column];
+
+        return collect($clone->processor->processSelect($clone, $clone->runSelect()));
     }
 
     /**

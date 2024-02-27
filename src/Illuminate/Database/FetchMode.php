@@ -19,7 +19,7 @@ class FetchMode
 
     public static function value(): self
     {
-        return new self([PDO::FETCH_COLUMN, 1]);
+        return new self([PDO::FETCH_COLUMN]);
     }
 
     public static function keyValue(): self
