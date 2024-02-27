@@ -28,17 +28,17 @@ class Statement
     /**
      * @return mixed
      */
-    public function fetch(FetchMode $mode): mixed
+    public function fetch(FetchMode $mode = null): mixed
     {
-        return $this->statement->fetch(...$mode->arguments());
+        return $this->statement->fetch(...($mode ? $mode->arguments() : []));
     }
 
     /**
-     * @return mixed
+     * @return array|false
      */
-    public function fetchAll(FetchMode $mode): mixed
+    public function fetchAll(FetchMode $mode = null): array|false
     {
-        return $this->statement->fetchAll(...$mode->arguments());
+        return $this->statement->fetchAll(...($mode ? $mode->arguments() : []));
     }
 
     /**

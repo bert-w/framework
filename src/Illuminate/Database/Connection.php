@@ -413,7 +413,7 @@ class Connection implements ConnectionInterface
 
             $statement->execute();
 
-            return $statement->fetchAll(...($fetchMode ?? new FetchMode)->arguments());
+            return $statement->fetchAll($fetchMode);
         });
     }
 
