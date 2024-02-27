@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Expression as Raw;
 use Illuminate\Database\Query\Grammars\Grammar;
+use Illuminate\Database\Query\Grammars\MariaDbGrammar;
 use Illuminate\Database\Query\Grammars\MySqlGrammar;
 use Illuminate\Database\Query\Grammars\PostgresGrammar;
 use Illuminate\Database\Query\Grammars\SQLiteGrammar;
@@ -2524,6 +2525,127 @@ class DatabaseQueryBuilderTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $builder = $this->getBuilder();
         $builder->from('users')->rightJoinSub(['foo'], 'sub', 'users.id', '=', 'sub.id');
+    }
+
+    public function testJoinLateral()
+    {
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral('select * from `contacts` where `contracts`.`user_id` = `users`.`id`', 'sub');
+        $this->assertSame('select * from `users` inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id`) as `sub` on true', $builder->toSql());
+
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub');
+        $this->assertSame('select * from `users` inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id`) as `sub` on true', $builder->toSql());
+
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $sub = $this->getMySqlBuilder();
+        $sub->getConnection()->shouldReceive('getDatabaseName');
+        $eloquentBuilder = new EloquentBuilder($sub->from('contacts')->whereColumn('contracts.user_id', 'users.id'));
+        $builder->from('users')->joinLateral($eloquentBuilder, 'sub');
+        $this->assertSame('select * from `users` inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id`) as `sub` on true', $builder->toSql());
+
+        $sub1 = $this->getMySqlBuilder();
+        $sub1->getConnection()->shouldReceive('getDatabaseName');
+        $sub1 = $sub1->from('contacts')->whereColumn('contracts.user_id', 'users.id')->where('name', 'foo');
+
+        $sub2 = $this->getMySqlBuilder();
+        $sub2->getConnection()->shouldReceive('getDatabaseName');
+        $sub2 = $sub2->from('contacts')->whereColumn('contracts.user_id', 'users.id')->where('name', 'bar');
+
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral($sub1, 'sub1')->joinLateral($sub2, 'sub2');
+
+        $expected = 'select * from `users` ';
+        $expected .= 'inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id` and `name` = ?) as `sub1` on true ';
+        $expected .= 'inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id` and `name` = ?) as `sub2` on true';
+
+        $this->assertEquals($expected, $builder->toSql());
+        $this->assertEquals(['foo', 'bar'], $builder->getRawBindings()['join']);
+
+        $this->expectException(InvalidArgumentException::class);
+        $builder = $this->getMySqlBuilder();
+        $builder->from('users')->joinLateral(['foo'], 'sub');
+    }
+
+    public function testJoinLateralMariaDb()
+    {
+        $this->expectException(RuntimeException::class);
+        $builder = $this->getMariaDbBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub')->toSql();
+    }
+
+    public function testJoinLateralSQLite()
+    {
+        $this->expectException(RuntimeException::class);
+        $builder = $this->getSQLiteBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub')->toSql();
+    }
+
+    public function testJoinLateralPostgres()
+    {
+        $builder = $this->getPostgresBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub');
+        $this->assertSame('select * from "users" inner join lateral (select * from "contacts" where "contracts"."user_id" = "users"."id") as "sub" on true', $builder->toSql());
+    }
+
+    public function testJoinLateralSqlServer()
+    {
+        $builder = $this->getSqlServerBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub');
+        $this->assertSame('select * from [users] cross apply (select * from [contacts] where [contracts].[user_id] = [users].[id]) as [sub]', $builder->toSql());
+    }
+
+    public function testJoinLateralWithPrefix()
+    {
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->getGrammar()->setTablePrefix('prefix_');
+        $builder->from('users')->joinLateral('select * from `contacts` where `contracts`.`user_id` = `users`.`id`', 'sub');
+        $this->assertSame('select * from `prefix_users` inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id`) as `prefix_sub` on true', $builder->toSql());
+    }
+
+    public function testLeftJoinLateral()
+    {
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+
+        $sub = $this->getMySqlBuilder();
+        $sub->getConnection()->shouldReceive('getDatabaseName');
+
+        $builder->from('users')->leftJoinLateral($sub->from('contacts')->whereColumn('contracts.user_id', 'users.id'), 'sub');
+        $this->assertSame('select * from `users` left join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id`) as `sub` on true', $builder->toSql());
+
+        $this->expectException(InvalidArgumentException::class);
+        $builder = $this->getBuilder();
+        $builder->from('users')->leftJoinLateral(['foo'], 'sub');
+    }
+
+    public function testLeftJoinLateralSqlServer()
+    {
+        $builder = $this->getSqlServerBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->leftJoinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub');
+        $this->assertSame('select * from [users] outer apply (select * from [contacts] where [contracts].[user_id] = [users].[id]) as [sub]', $builder->toSql());
     }
 
     public function testJoinLateral()
@@ -5987,6 +6109,14 @@ SQL;
     protected function getMySqlBuilder()
     {
         $grammar = new MySqlGrammar;
+        $processor = m::mock(Processor::class);
+
+        return new Builder(m::mock(ConnectionInterface::class), $grammar, $processor);
+    }
+
+    protected function getMariaDbBuilder()
+    {
+        $grammar = new MariaDbGrammar;
         $processor = m::mock(Processor::class);
 
         return new Builder(m::mock(ConnectionInterface::class), $grammar, $processor);
