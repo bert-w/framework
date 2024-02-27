@@ -239,7 +239,10 @@ class Builder implements BuilderContract
      */
     public $useWritePdo = false;
 
-    public FetchMode $fetchMode;
+    /**
+     * @var FetchMode|null
+     */
+    public FetchMode|null $fetchMode = null;
 
     /**
      * Create a new query builder instance.
