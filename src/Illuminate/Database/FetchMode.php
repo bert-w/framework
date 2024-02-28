@@ -17,7 +17,7 @@ class FetchMode
         return $this->arguments;
     }
 
-    public static function value(): self
+    public static function column(): self
     {
         return new self([PDO::FETCH_COLUMN]);
     }
@@ -26,4 +26,11 @@ class FetchMode
     {
         return new self([PDO::FETCH_COLUMN | PDO::FETCH_UNIQUE]);
     }
+
+    public static function keyedByFirstColumn(): self
+    {
+        return new self([PDO::FETCH_UNIQUE]);
+    }
+
+
 }

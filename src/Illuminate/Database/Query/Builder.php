@@ -3078,7 +3078,7 @@ class Builder implements BuilderContract
      */
     public function pluck($column, $key = null)
     {
-        $this->fetchMode(is_null($key) ? FetchMode::value() : FetchMode::keyValue());
+        $this->fetchMode(is_null($key) ? FetchMode::column() : FetchMode::keyValue());
 
         $clone = $this->clone();
 

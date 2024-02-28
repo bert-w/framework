@@ -6,6 +6,7 @@ use Illuminate\Database\Capsule\Manager as DB;
 use Illuminate\Database\Eloquent\Model as Eloquent;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\FetchMode;
 use PHPUnit\Framework\TestCase;
 
 class DatabaseEloquentHasOneThroughIntegrationTest extends TestCase
@@ -114,6 +115,27 @@ class DatabaseEloquentHasOneThroughIntegrationTest extends TestCase
         })->get();
 
         $this->assertCount(1, $position);
+    }
+
+    public function testXxx()
+    {
+        $this->seedData();
+        $this->seedDataExtended();
+
+        dump(
+            HasOneThroughIntermediateTestPosition::query()->select(['name', 'name', 'shortname'])
+                ->fetchMode(FetchMode::keyedByFirstColumn())
+                ->get()->toArray(),
+
+            // @TODO check why this syntax comes back as an object (possibly to do with different `pluck()` logic?
+            HasOneThroughIntermediateTestPosition::query()->select(['name', 'shortname'])
+                ->fetchMode(FetchMode::keyValue())
+                ->get()->toArray(),
+
+            HasOneThroughIntermediateTestPosition::query()->pluck('shortname', 'name')
+                ->toArray()
+        );
+
     }
 
     public function testWithWhereHasOnARelationWithCustomIntermediateAndLocalKey()
