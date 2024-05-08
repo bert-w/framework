@@ -5,6 +5,7 @@ namespace Illuminate\Console;
 use Illuminate\Console\View\Components\Factory;
 use Illuminate\Contracts\Console\Isolatable;
 use Illuminate\Support\Traits\Macroable;
+use Illuminate\Support\Traits\Typeable;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -18,7 +19,8 @@ class Command extends SymfonyCommand
         Concerns\InteractsWithIO,
         Concerns\InteractsWithSignals,
         Concerns\PromptsForMissingInput,
-        Macroable;
+        Macroable,
+        Typeable;
 
     /**
      * The Laravel application instance.

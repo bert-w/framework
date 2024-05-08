@@ -17,13 +17,18 @@ use Illuminate\Routing\Matching\UriValidator;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Illuminate\Support\Traits\Macroable;
+use Illuminate\Support\Traits\Typeable;
 use Laravel\SerializableClosure\SerializableClosure;
 use LogicException;
 use Symfony\Component\Routing\Route as SymfonyRoute;
 
 class Route
 {
-    use CreatesRegularExpressionRouteConstraints, FiltersControllerMiddleware, Macroable, ResolvesRouteDependencies;
+    use CreatesRegularExpressionRouteConstraints,
+        FiltersControllerMiddleware,
+        Macroable,
+        ResolvesRouteDependencies,
+        Typeable;
 
     /**
      * The URI pattern the route responds to.

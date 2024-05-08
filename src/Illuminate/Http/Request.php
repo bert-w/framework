@@ -6,9 +6,11 @@ use ArrayAccess;
 use Closure;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Session\SymfonySessionDecorator;
+use Illuminate\Support;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Illuminate\Support\Traits\Macroable;
+use Illuminate\Support\Typeable;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Exception\SessionNotFoundException;
 use Symfony\Component\HttpFoundation\InputBag;
@@ -26,6 +28,7 @@ class Request extends SymfonyRequest implements Arrayable, ArrayAccess
         Concerns\InteractsWithContentTypes,
         Concerns\InteractsWithFlashData,
         Concerns\InteractsWithInput,
+        Support\Traits\Typeable,
         Macroable;
 
     /**
@@ -769,6 +772,16 @@ class Request extends SymfonyRequest implements Arrayable, ArrayAccess
     public function offsetUnset($offset): void
     {
         $this->getInputSource()->remove($offset);
+    }
+
+    /**
+     * Get the typeable proxy instance.
+     *
+     * @return Typeable<$this>
+     */
+    protected function typeable(string $method = 'input'): Typeable
+    {
+        return new Typeable($this, $method);
     }
 
     /**
