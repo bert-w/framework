@@ -25,7 +25,7 @@ trait CompilesIncludes
     {
         $expression = $this->stripParentheses($expression);
 
-        return "<?php echo \$__env->make({$expression}, \Illuminate\Support\Arr::except(get_defined_vars(), ['__data', '__path']))->render(); ?>";
+        return "<?php echo \$__env->make({$expression}, get_defined_vars())->render(); ?>";
     }
 
     /**
@@ -38,7 +38,7 @@ trait CompilesIncludes
     {
         $expression = $this->stripParentheses($expression);
 
-        return "<?php if (\$__env->exists({$expression})) echo \$__env->make({$expression}, \Illuminate\Support\Arr::except(get_defined_vars(), ['__data', '__path']))->render(); ?>";
+        return "<?php if (\$__env->exists({$expression})) echo \$__env->make({$expression}, get_defined_vars())->render(); ?>";
     }
 
     /**
@@ -51,7 +51,7 @@ trait CompilesIncludes
     {
         $expression = $this->stripParentheses($expression);
 
-        return "<?php echo \$__env->renderWhen($expression, \Illuminate\Support\Arr::except(get_defined_vars(), ['__data', '__path'])); ?>";
+        return "<?php echo \$__env->renderWhen($expression, get_defined_vars()); ?>";
     }
 
     /**
@@ -64,7 +64,7 @@ trait CompilesIncludes
     {
         $expression = $this->stripParentheses($expression);
 
-        return "<?php echo \$__env->renderUnless($expression, \Illuminate\Support\Arr::except(get_defined_vars(), ['__data', '__path'])); ?>";
+        return "<?php echo \$__env->renderUnless($expression, get_defined_vars()); ?>";
     }
 
     /**
@@ -77,6 +77,6 @@ trait CompilesIncludes
     {
         $expression = $this->stripParentheses($expression);
 
-        return "<?php echo \$__env->first({$expression}, \Illuminate\Support\Arr::except(get_defined_vars(), ['__data', '__path']))->render(); ?>";
+        return "<?php echo \$__env->first({$expression}, get_defined_vars())->render(); ?>";
     }
 }

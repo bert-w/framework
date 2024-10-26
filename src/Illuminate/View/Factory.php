@@ -131,11 +131,7 @@ class Factory implements FactoryContract
      */
     public function file($path, $data = [], $mergeData = [])
     {
-        $data = array_merge($mergeData, $this->parseData($data));
-
-        return tap($this->viewInstance($path, $path, $data), function ($view) {
-            $this->callCreator($view);
-        });
+        return $this->createInstance($path, $path, $data, $mergeData);
     }
 
     /**
@@ -152,10 +148,27 @@ class Factory implements FactoryContract
             $view = $this->normalizeName($view)
         );
 
+        return $this->createInstance($view, $path, $data, $mergeData);
+    }
+
+    /**
+     * Create a new view instance.
+     *
+     * @param  string  $view
+     * @param  string  $path
+     * @param  \Illuminate\Contracts\Support\Arrayable|array  $data
+     * @param  array  $mergeData
+     * @return \Illuminate\Contracts\View\View
+     */
+    protected function createInstance($view, $path, $data = [], $mergeData = [])
+    {
         // Next, we will create the view instance and call the view creator for the view
         // which can set any data, etc. Then we will return the view instance back to
         // the caller for rendering or performing other view manipulations on this.
         $data = array_merge($mergeData, $this->parseData($data));
+
+        // Unset variables related to view compilation.
+        unset($data['__data'], $data['__path']);
 
         return tap($this->viewInstance($view, $path, $data), function ($view) {
             $this->callCreator($view);
