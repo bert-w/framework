@@ -131,7 +131,10 @@ class Factory implements FactoryContract
      */
     public function file($path, $data = [], $mergeData = [])
     {
-        $data = array_merge($mergeData, $this->parseData($data));
+        $data = $this->parseData($data) + $mergeData;
+
+        // Unset variables related to view compilation.
+        unset($data['__data'], $data['__path']);
 
         return tap($this->viewInstance($path, $path, $data), function ($view) {
             $this->callCreator($view);
@@ -155,7 +158,10 @@ class Factory implements FactoryContract
         // Next, we will create the view instance and call the view creator for the view
         // which can set any data, etc. Then we will return the view instance back to
         // the caller for rendering or performing other view manipulations on this.
-        $data = array_merge($mergeData, $this->parseData($data));
+        $data = $this->parseData($data) + $mergeData;
+
+        // Unset variables related to view compilation.
+        unset($data['__data'], $data['__path']);
 
         return tap($this->viewInstance($view, $path, $data), function ($view) {
             $this->callCreator($view);
