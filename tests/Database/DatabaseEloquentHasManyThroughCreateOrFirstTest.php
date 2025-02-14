@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Illuminate\Tests\Database;
 
 use Exception;
-use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
@@ -75,6 +75,7 @@ class DatabaseEloquentHasManyThroughCreateOrFirstTest extends TestCase
                 'select "child".*, "pivot"."parent_id" as "laravel_through_key" from "child" inner join "pivot" on "pivot"."id" = "child"."pivot_id" where "pivot"."parent_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 true,
+                [],
             )
             ->andReturn([[
                 'id' => 789,
@@ -114,6 +115,7 @@ class DatabaseEloquentHasManyThroughCreateOrFirstTest extends TestCase
                 'select "child".*, "pivot"."parent_id" as "laravel_through_key" from "child" inner join "pivot" on "pivot"."id" = "child"."pivot_id" where "pivot"."parent_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 true,
+                [],
             )
             ->andReturn([]);
 
@@ -148,6 +150,7 @@ class DatabaseEloquentHasManyThroughCreateOrFirstTest extends TestCase
                 'select "child".*, "pivot"."parent_id" as "laravel_through_key" from "child" inner join "pivot" on "pivot"."id" = "child"."pivot_id" where "pivot"."parent_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 true,
+                [],
             )
             ->andReturn([[
                 'id' => 789,
@@ -187,6 +190,7 @@ class DatabaseEloquentHasManyThroughCreateOrFirstTest extends TestCase
                 'select "child".*, "pivot"."parent_id" as "laravel_through_key" from "child" inner join "pivot" on "pivot"."id" = "child"."pivot_id" where "pivot"."parent_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 true,
+                [],
             )
             ->andReturn([]);
 
@@ -204,6 +208,7 @@ class DatabaseEloquentHasManyThroughCreateOrFirstTest extends TestCase
                 'select "child".*, "pivot"."parent_id" as "laravel_through_key" from "child" inner join "pivot" on "pivot"."id" = "child"."pivot_id" where "pivot"."parent_id" = ? and ("attr" = ? and "val" = ?) limit 1',
                 [123, 'foo', 'bar'],
                 true,
+                [],
             )
             ->andReturn([[
                 'id' => 789,
@@ -243,6 +248,7 @@ class DatabaseEloquentHasManyThroughCreateOrFirstTest extends TestCase
                 'select "child".*, "pivot"."parent_id" as "laravel_through_key" from "child" inner join "pivot" on "pivot"."id" = "child"."pivot_id" where "pivot"."parent_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 true,
+                [],
             )
             ->andReturn([]);
 
@@ -280,6 +286,7 @@ class DatabaseEloquentHasManyThroughCreateOrFirstTest extends TestCase
                 'select "child".*, "pivot"."parent_id" as "laravel_through_key" from "child" inner join "pivot" on "pivot"."id" = "child"."pivot_id" where "pivot"."parent_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 true,
+                [],
             )
             ->andReturn([[
                 'id' => 789,
@@ -327,6 +334,7 @@ class DatabaseEloquentHasManyThroughCreateOrFirstTest extends TestCase
                 'select "child".*, "pivot"."parent_id" as "laravel_through_key" from "child" inner join "pivot" on "pivot"."id" = "child"."pivot_id" where "pivot"."parent_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 true,
+                [],
             )
             ->andReturn([]);
 
@@ -344,6 +352,7 @@ class DatabaseEloquentHasManyThroughCreateOrFirstTest extends TestCase
                 'select "child".*, "pivot"."parent_id" as "laravel_through_key" from "child" inner join "pivot" on "pivot"."id" = "child"."pivot_id" where "pivot"."parent_id" = ? and ("attr" = ? and "val" = ?) limit 1',
                 [123, 'foo', 'bar'],
                 true,
+                [],
             )
             ->andReturn([[
                 'id' => 789,
@@ -372,9 +381,11 @@ class DatabaseEloquentHasManyThroughCreateOrFirstTest extends TestCase
     {
         $grammarClass = 'Illuminate\Database\Query\Grammars\\'.$database.'Grammar';
         $processorClass = 'Illuminate\Database\Query\Processors\\'.$database.'Processor';
-        $grammar = new $grammarClass;
         $processor = new $processorClass;
-        $connection = Mockery::mock(ConnectionInterface::class, ['getQueryGrammar' => $grammar, 'getPostProcessor' => $processor]);
+        $connection = Mockery::mock(Connection::class, ['getPostProcessor' => $processor]);
+        $grammar = new $grammarClass($connection);
+        $connection->shouldReceive('getQueryGrammar')->andReturn($grammar);
+        $connection->shouldReceive('getTablePrefix')->andReturn('');
         $connection->shouldReceive('query')->andReturnUsing(function () use ($connection, $grammar, $processor) {
             return new Builder($connection, $grammar, $processor);
         });

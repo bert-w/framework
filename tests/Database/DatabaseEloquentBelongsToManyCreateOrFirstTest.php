@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Illuminate\Tests\Database;
 
 use Exception;
-use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -84,7 +84,7 @@ class DatabaseEloquentBelongsToManyCreateOrFirstTest extends TestCase
 
         $source->getConnection()
             ->expects('select')
-            ->with('select * from "related_table" where ("attr" = ?) limit 1', ['foo'], true)
+            ->with('select * from "related_table" where ("attr" = ?) limit 1', ['foo'], true, [])
             ->andReturn([[
                 'id' => 456,
                 'attr' => 'foo',
@@ -128,6 +128,7 @@ class DatabaseEloquentBelongsToManyCreateOrFirstTest extends TestCase
                 'select "related_table".*, "pivot_table"."source_id" as "pivot_source_id", "pivot_table"."related_id" as "pivot_related_id" from "related_table" inner join "pivot_table" on "related_table"."id" = "pivot_table"."related_id" where "pivot_table"."source_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 true,
+                [],
             )
             ->andReturn([[
                 'id' => 456,
@@ -176,7 +177,7 @@ class DatabaseEloquentBelongsToManyCreateOrFirstTest extends TestCase
 
         $source->getConnection()
             ->expects('select')
-            ->with('select * from "related_table" where ("attr" = ?) limit 1', ['foo'], true)
+            ->with('select * from "related_table" where ("attr" = ?) limit 1', ['foo'], true, [])
             ->andReturn([[
                 'id' => 456,
                 'attr' => 'foo',
@@ -199,6 +200,7 @@ class DatabaseEloquentBelongsToManyCreateOrFirstTest extends TestCase
                 'select "related_table".*, "pivot_table"."source_id" as "pivot_source_id", "pivot_table"."related_id" as "pivot_related_id" from "related_table" inner join "pivot_table" on "related_table"."id" = "pivot_table"."related_id" where "pivot_table"."source_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 false,
+                [],
             )
             ->andReturn([[
                 'id' => 456,
@@ -243,6 +245,7 @@ class DatabaseEloquentBelongsToManyCreateOrFirstTest extends TestCase
                 'select "related_table".*, "pivot_table"."source_id" as "pivot_source_id", "pivot_table"."related_id" as "pivot_related_id" from "related_table" inner join "pivot_table" on "related_table"."id" = "pivot_table"."related_id" where "pivot_table"."source_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 true,
+                [],
             )
             ->andReturn([]);
 
@@ -252,6 +255,7 @@ class DatabaseEloquentBelongsToManyCreateOrFirstTest extends TestCase
                 'select * from "related_table" where ("attr" = ?) limit 1',
                 ['foo'],
                 true,
+                [],
             )
             ->andReturn([[
                 'id' => 456,
@@ -326,6 +330,7 @@ class DatabaseEloquentBelongsToManyCreateOrFirstTest extends TestCase
                 'select "related_table".*, "pivot_table"."source_id" as "pivot_source_id", "pivot_table"."related_id" as "pivot_related_id" from "related_table" inner join "pivot_table" on "related_table"."id" = "pivot_table"."related_id" where "pivot_table"."source_id" = ? and ("attr" = ?) limit 1',
                 [123, 'foo'],
                 true,
+                [],
             )
             ->andReturn([]);
 
@@ -335,6 +340,7 @@ class DatabaseEloquentBelongsToManyCreateOrFirstTest extends TestCase
                 'select * from "related_table" where ("attr" = ?) limit 1',
                 ['foo'],
                 true,
+                [],
             )
             ->andReturn([]);
 
@@ -450,9 +456,11 @@ class DatabaseEloquentBelongsToManyCreateOrFirstTest extends TestCase
     {
         $grammarClass = 'Illuminate\Database\Query\Grammars\\'.$database.'Grammar';
         $processorClass = 'Illuminate\Database\Query\Processors\\'.$database.'Processor';
-        $grammar = new $grammarClass;
         $processor = new $processorClass;
-        $connection = Mockery::mock(ConnectionInterface::class, ['getQueryGrammar' => $grammar, 'getPostProcessor' => $processor]);
+        $connection = Mockery::mock(Connection::class, ['getPostProcessor' => $processor]);
+        $grammar = new $grammarClass($connection);
+        $connection->shouldReceive('getQueryGrammar')->andReturn($grammar);
+        $connection->shouldReceive('getTablePrefix')->andReturn('');
         $connection->shouldReceive('query')->andReturnUsing(function () use ($connection, $grammar, $processor) {
             return new BaseBuilder($connection, $grammar, $processor);
         });
