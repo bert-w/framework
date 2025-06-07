@@ -114,6 +114,8 @@ class EloquentCrossDatabaseTest extends DatabaseTestCase
         foreach (['users', 'sub_posts', 'comments', 'views', 'viewables', 'tags', 'post_tag'] as $table) {
             Schema::dropIfExists(static::SECONDARY_SCHEMA.'.'.$table);
         }
+
+        $this->app['db']->connection()->statement('DROP DATABASE '.static::SECONDARY_SCHEMA);
     }
 
     public function test_relationships(): void
