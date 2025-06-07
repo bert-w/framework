@@ -2,8 +2,10 @@
 
 namespace Illuminate\Tests\Integration\Database\EloquentCrossDatabaseTest;
 
+use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Pivot;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
@@ -13,15 +15,25 @@ class EloquentCrossDatabaseTest extends DatabaseTestCase
 {
     protected function getEnvironmentSetUp($app)
     {
-        define('__TEST_DEFAULT_SCHEMA', 'schema_one');
         define('__TEST_SECONDARY_SCHEMA', 'schema_two');
 
         parent::getEnvironmentSetUp($app);
     }
 
+    protected function setUpDatabaseRequirements(Closure $callback): void
+    {
+        try {
+            $this->app['db']->connection()->statement('CREATE DATABASE '.__TEST_SECONDARY_SCHEMA);
+        } catch(QueryException $e) {
+            // ...
+        }
+
+        parent::setUpDatabaseRequirements($callback);
+    }
+
     protected function defineDatabaseMigrationsAfterDatabaseRefreshed()
     {
-        Schema::create(__TEST_DEFAULT_SCHEMA.'.posts', function (Blueprint $table) {
+        Schema::create('posts', function (Blueprint $table) {
             $table->increments('id');
             $table->string('title');
             $table->foreignId('user_id')->nullable();
