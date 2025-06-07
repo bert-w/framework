@@ -860,7 +860,7 @@ trait HasRelationships
      *
      * @param  class-string<TRelatedModel>  $related
      * @param  string  $name
-     * @param  string|null  $table
+     * @param  string|class-string<TRelatedModel>|null  $table
      * @param  string|null  $foreignPivotKey
      * @param  string|null  $relatedPivotKey
      * @param  string|null  $parentKey
