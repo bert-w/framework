@@ -219,16 +219,10 @@ class View extends SecondaryBaseModel
 
 class PostTag extends Pivot
 {
-    public function getTable(): ?string
-    {
-        return __TEST_SECONDARY_SCHEMA.'.post_tags';
-    }
+    protected $table = __TEST_SECONDARY_SCHEMA . '.post_tag';
 }
 
 class Viewable extends Pivot
 {
-    public function getTable(): ?string
-    {
-        return __TEST_SECONDARY_SCHEMA.'.viewables';
-    }
+    protected $table = __TEST_SECONDARY_SCHEMA . '.viewables';
 }
