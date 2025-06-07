@@ -46,7 +46,7 @@ class MorphToMany extends BelongsToMany
      * @param  \Illuminate\Database\Eloquent\Builder<TRelatedModel>  $query
      * @param  TDeclaringModel  $parent
      * @param  string  $name
-     * @param  string  $table
+     * @param  string|class-string<TRelatedModel>  $table
      * @param  string  $foreignPivotKey
      * @param  string  $relatedPivotKey
      * @param  string  $parentKey
