@@ -221,7 +221,7 @@ class PostTag extends Pivot
 {
     public function getTable(): ?string
     {
-        return __TEST_SECONDARY_SCHEMA.'.'.parent::getTable();
+        return __TEST_SECONDARY_SCHEMA.'.post_tags';
     }
 }
 
@@ -229,6 +229,6 @@ class Viewable extends Pivot
 {
     public function getTable(): ?string
     {
-        return __TEST_SECONDARY_SCHEMA.'.'.parent::getTable();
+        return __TEST_SECONDARY_SCHEMA.'.viewables';
     }
 }
