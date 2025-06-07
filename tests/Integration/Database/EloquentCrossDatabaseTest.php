@@ -21,7 +21,7 @@ use Illuminate\Tests\Integration\Database\DatabaseTestCase;
 
 class EloquentCrossDatabaseTest extends DatabaseTestCase
 {
-    public const string SECONDARY_SCHEMA = 'schema_two';
+    public const SECONDARY_SCHEMA = 'schema_two';
 
     protected function setUpDatabaseRequirements(Closure $callback): void
     {
