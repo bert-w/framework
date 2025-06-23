@@ -5,7 +5,6 @@ namespace Illuminate\Support\Defer;
 use ArrayAccess;
 use Closure;
 use Countable;
-use Illuminate\Support\Collection;
 
 class DeferredCallbackCollection implements ArrayAccess, Countable
 {
@@ -33,7 +32,7 @@ class DeferredCallbackCollection implements ArrayAccess, Countable
      */
     public function invoke(): void
     {
-        $this->invokeWhen(fn () => true);
+        $this->invokeWhen();
     }
 
     /**
@@ -44,7 +43,7 @@ class DeferredCallbackCollection implements ArrayAccess, Countable
      */
     public function invokeWhen(?Closure $when = null): void
     {
-        $when ??= fn () => true;
+        $when ??= static fn () => true;
 
         $this->forgetDuplicates();
 
@@ -65,10 +64,15 @@ class DeferredCallbackCollection implements ArrayAccess, Countable
      */
     public function forget(string $name): void
     {
-        $this->callbacks = (new Collection($this->callbacks))
-            ->reject(fn ($callback) => $callback->name === $name)
-            ->values()
-            ->all();
+        $arr = [];
+
+        foreach($this->callbacks as $callback) {
+            if($callback->name !== $name) {
+                $arr[] = $callback;
+            }
+        }
+
+        $this->callbacks = $arr;
     }
 
     /**
@@ -76,14 +80,15 @@ class DeferredCallbackCollection implements ArrayAccess, Countable
      *
      * @return $this
      */
-    protected function forgetDuplicates(): static
+    protected function forgetDuplicates(): self
     {
-        $this->callbacks = (new Collection($this->callbacks))
-            ->reverse()
-            ->unique(fn ($c) => $c->name)
-            ->reverse()
-            ->values()
-            ->all();
+        $map = [];
+
+        foreach($this->callbacks as $callback) {
+            $map[$callback->name] = $callback;
+        }
+
+        $this->callbacks = array_values($map);
 
         return $this;
     }
