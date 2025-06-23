@@ -43,6 +43,7 @@ class DeferredCallbackCollection implements ArrayAccess, Countable
      */
     public function invokeWhen(?Closure $when = null): void
     {
+
         $when ??= static fn () => true;
 
         $this->forgetDuplicates();
