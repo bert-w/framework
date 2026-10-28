@@ -63,6 +63,13 @@ class RedisQueue extends Queue implements QueueContract, ClearableQueue
     protected $migrationBatchSize = -1;
 
     /**
+     * The seconds after a job's own timeout at which it expires, instead of after "retry after".
+     *
+     * @var int|null
+     */
+    protected $retryAfterTimeout = null;
+
+    /**
      * Indicates if a secondary queue had a job available between checks of the primary queue.
      *
      * Only applicable when monitoring multiple named queues with a single instance.
@@ -88,6 +95,7 @@ class RedisQueue extends Queue implements QueueContract, ClearableQueue
      * @param  int|null  $blockFor
      * @param  bool  $dispatchAfterCommit
      * @param  int  $migrationBatchSize
+     * @param  int|null  $retryAfterTimeout
      */
     public function __construct(
         Redis $redis,
@@ -97,6 +105,7 @@ class RedisQueue extends Queue implements QueueContract, ClearableQueue
         $blockFor = null,
         $dispatchAfterCommit = false,
         $migrationBatchSize = -1,
+        $retryAfterTimeout = null,
     ) {
         $this->redis = $redis;
         $this->default = $default;
@@ -105,6 +114,7 @@ class RedisQueue extends Queue implements QueueContract, ClearableQueue
         $this->retryAfter = $retryAfter;
         $this->dispatchAfterCommit = $dispatchAfterCommit;
         $this->migrationBatchSize = $migrationBatchSize;
+        $this->retryAfterTimeout = $retryAfterTimeout;
     }
 
     /**
@@ -590,7 +600,7 @@ class RedisQueue extends Queue implements QueueContract, ClearableQueue
     {
         $nextJob = $this->getConnection()->eval(
             LuaScripts::pop(), 3, $queue, $queue.':reserved', $queue.':notify',
-            $this->availableAt($this->retryAfter)
+            $this->availableAt($this->retryAfter), $this->currentTime(), $this->retryAfterTimeout ?? ''
         );
 
         if (empty($nextJob)) {
