@@ -63,11 +63,18 @@ class RedisQueue extends Queue implements QueueContract, ClearableQueue
     protected $migrationBatchSize = -1;
 
     /**
-     * The seconds after a job's own timeout at which it expires, instead of after "retry after".
+     * The seconds after a job's timeout at which it expires, instead of after "retry after".
      *
      * @var int|null
      */
     protected $retryAfterTimeout = null;
+
+    /**
+     * The timeout of the worker popping jobs, for jobs without a timeout of their own.
+     *
+     * @var int|null
+     */
+    protected $workerTimeout = null;
 
     /**
      * Indicates if a secondary queue had a job available between checks of the primary queue.
@@ -600,7 +607,7 @@ class RedisQueue extends Queue implements QueueContract, ClearableQueue
     {
         $nextJob = $this->getConnection()->eval(
             LuaScripts::pop(), 3, $queue, $queue.':reserved', $queue.':notify',
-            $this->availableAt($this->retryAfter), $this->currentTime(), $this->retryAfterTimeout ?? ''
+            $this->availableAt($this->retryAfter), $this->currentTime(), $this->retryAfterTimeout ?: '', $this->workerTimeout ?? ''
         );
 
         if (empty($nextJob)) {
@@ -727,5 +734,18 @@ class RedisQueue extends Queue implements QueueContract, ClearableQueue
     public function getRedis()
     {
         return $this->redis;
+    }
+
+    /**
+     * Set the timeout of the worker popping jobs, if it times out the jobs it pops.
+     *
+     * @param  int|null  $timeout
+     * @return $this
+     */
+    public function setWorkerTimeout($timeout)
+    {
+        $this->workerTimeout = $timeout;
+
+        return $this;
     }
 }

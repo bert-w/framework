@@ -88,7 +88,8 @@ LUA;
      * KEYS[3] - The notify queue
      * ARGV[1] - The time at which the reserved job will expire
      * ARGV[2] - The current UNIX timestamp
-     * ARGV[3] - The seconds after a job's own timeout at which it expires instead, or an empty string
+     * ARGV[3] - The seconds after a job's timeout at which it expires instead, or an empty string
+     * ARGV[4] - The timeout of the worker popping the job, or an empty string if it doesn't time out jobs
      *
      * @return string
      */
@@ -104,12 +105,17 @@ if(job ~= false) then
     reserved = cjson.decode(job)
     reserved['attempts'] = reserved['attempts'] + 1
 
-    -- A job with a timeout of its own may expire relative to that timeout instead...
+    -- A job popped by a worker that times out jobs may expire relative to its timeout instead...
     local expiration = ARGV[1]
-    local timeout = tonumber(reserved['timeout'])
+    local margin = tonumber(ARGV[3])
+    local workerTimeout = tonumber(ARGV[4])
 
-    if(ARGV[3] and ARGV[3] ~= '' and timeout and timeout > 0) then
-        expiration = ARGV[2] + timeout + ARGV[3]
+    if(margin and workerTimeout) then
+        local timeout = tonumber(reserved['timeout']) or workerTimeout
+
+        if(timeout > 0) then
+            expiration = ARGV[2] + timeout + margin
+        end
     end
 
     reserved = cjson.encode(reserved)
