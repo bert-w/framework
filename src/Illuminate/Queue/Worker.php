@@ -234,6 +234,12 @@ class Worker
     {
         if ($supportsAsyncSignals = $this->supportsAsyncSignals()) {
             $this->listenForSignals($connectionName, $queue, $options);
+
+            // Jobs are only timed out when async signals are supported, so only then may the
+            // connection reserve the jobs we pop for their timeout instead of "retry after".
+            if (method_exists($connection = $this->manager->connection($connectionName), 'setWorkerTimeout')) {
+                $connection->setWorkerTimeout($options->timeout);
+            }
         }
 
         $lastRestart = $this->getTimestampOfLastQueueRestart();

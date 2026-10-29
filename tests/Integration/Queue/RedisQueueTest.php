@@ -53,10 +53,11 @@ class RedisQueueTest extends TestCase
      * @param  string|null  $connection
      * @param  int  $retryAfter
      * @param  int|null  $blockFor
+     * @param  int|null  $retryAfterTimeout
      */
-    private function setQueue($driver, $default = 'default', $connection = null, $retryAfter = 60, $blockFor = null)
+    private function setQueue($driver, $default = 'default', $connection = null, $retryAfter = 60, $blockFor = null, $retryAfterTimeout = null)
     {
-        $this->queue = new RedisQueue($this->redis[$driver], $default, $connection, $retryAfter, $blockFor);
+        $this->queue = new RedisQueue($this->redis[$driver], $default, $connection, $retryAfter, $blockFor, retryAfterTimeout: $retryAfterTimeout);
         $this->container = Mockery::spy(Container::class);
         $this->queue->setContainer($this->container);
     }
@@ -175,6 +176,131 @@ class RedisQueueTest extends TestCase
         $this->assertLessThanOrEqual($score, $before + 60);
         $this->assertGreaterThanOrEqual($score, $after + 60);
         $this->assertEquals($job, unserialize(json_decode($reservedJob)->data->command));
+    }
+
+    /**
+     * @param  string  $driver
+     */
+    #[DataProvider('redisDriverProvider')]
+    public function testPoppedJobWithTimeoutExpiresRetryAfterTimeoutAfterItsTimeout($driver)
+    {
+        $default = config('queue.connections.redis.queue', 'default');
+        $this->setQueue($driver, $default, retryAfterTimeout: 15);
+        $this->queue->setWorkerTimeout(30);
+
+        $this->queue->push(new RedisQueueIntegrationTestTimeoutJob(1));
+
+        $this->assertReservedJobExpiresAfter($driver, $default, 100 + 15);
+    }
+
+    /**
+     * @param  string  $driver
+     */
+    #[DataProvider('redisDriverProvider')]
+    public function testPoppedJobWithoutTimeoutExpiresRetryAfterTimeoutAfterTheWorkerTimeout($driver)
+    {
+        $default = config('queue.connections.redis.queue', 'default');
+        $this->setQueue($driver, $default, retryAfterTimeout: 15);
+        $this->queue->setWorkerTimeout(30);
+
+        $this->queue->push(new RedisQueueIntegrationTestJob(1));
+
+        $this->assertReservedJobExpiresAfter($driver, $default, 30 + 15);
+    }
+
+    /**
+     * @param  string  $driver
+     */
+    #[DataProvider('redisDriverProvider')]
+    public function testPoppedJobWithTimeoutExpiresAfterRetryAfterWithoutRetryAfterTimeout($driver)
+    {
+        $default = config('queue.connections.redis.queue', 'default');
+        $this->setQueue($driver, $default);
+        $this->queue->setWorkerTimeout(30);
+
+        $this->queue->push(new RedisQueueIntegrationTestTimeoutJob(1));
+
+        $this->assertReservedJobExpiresAfter($driver, $default, 60);
+    }
+
+    /**
+     * @param  string  $driver
+     */
+    #[DataProvider('redisDriverProvider')]
+    public function testPoppedJobWithTimeoutExpiresAfterRetryAfterWithZeroRetryAfterTimeout($driver)
+    {
+        $default = config('queue.connections.redis.queue', 'default');
+        $this->setQueue($driver, $default, retryAfterTimeout: 0);
+        $this->queue->setWorkerTimeout(30);
+
+        $this->queue->push(new RedisQueueIntegrationTestTimeoutJob(1));
+
+        $this->assertReservedJobExpiresAfter($driver, $default, 60);
+    }
+
+    /**
+     * @param  string  $driver
+     */
+    #[DataProvider('redisDriverProvider')]
+    public function testPoppedJobWithZeroTimeoutExpiresAfterRetryAfter($driver)
+    {
+        $default = config('queue.connections.redis.queue', 'default');
+        $this->setQueue($driver, $default, retryAfterTimeout: 15);
+        $this->queue->setWorkerTimeout(30);
+
+        $this->queue->push(new RedisQueueIntegrationTestTimeoutJob(1, timeout: 0));
+
+        $this->assertReservedJobExpiresAfter($driver, $default, 60);
+    }
+
+    /**
+     * @param  string  $driver
+     */
+    #[DataProvider('redisDriverProvider')]
+    public function testPoppedJobWithoutTimeoutExpiresAfterRetryAfterWithZeroWorkerTimeout($driver)
+    {
+        $default = config('queue.connections.redis.queue', 'default');
+        $this->setQueue($driver, $default, retryAfterTimeout: 15);
+        $this->queue->setWorkerTimeout(0);
+
+        $this->queue->push(new RedisQueueIntegrationTestJob(1));
+
+        $this->assertReservedJobExpiresAfter($driver, $default, 60);
+    }
+
+    /**
+     * @param  string  $driver
+     */
+    #[DataProvider('redisDriverProvider')]
+    public function testPoppedJobWithTimeoutExpiresAfterRetryAfterWithoutWorkerTimeout($driver)
+    {
+        $default = config('queue.connections.redis.queue', 'default');
+        $this->setQueue($driver, $default, retryAfterTimeout: 15);
+
+        $this->queue->push(new RedisQueueIntegrationTestTimeoutJob(1));
+
+        $this->assertReservedJobExpiresAfter($driver, $default, 60);
+    }
+
+    /**
+     * Pop the next job and assert its reservation expires the given number of seconds from now.
+     *
+     * @param  string  $driver
+     * @param  string  $default
+     * @param  int  $seconds
+     */
+    private function assertReservedJobExpiresAfter($driver, $default, $seconds)
+    {
+        $before = $this->currentTime();
+        $this->queue->pop();
+        $after = $this->currentTime();
+
+        $redisKey = $this->getQueueRedisKey($default);
+        $result = $this->redis[$driver]->connection()->zrangebyscore("$redisKey:reserved", -INF, INF, ['withscores' => true]);
+        $score = (int) array_values($result)[0];
+
+        $this->assertGreaterThanOrEqual($before + $seconds, $score);
+        $this->assertLessThanOrEqual($after + $seconds, $score);
     }
 
     /**
@@ -863,6 +989,24 @@ class RedisQueueIntegrationTestJob
     public function __construct($i)
     {
         $this->i = $i;
+    }
+
+    public function handle()
+    {
+        //
+    }
+}
+
+class RedisQueueIntegrationTestTimeoutJob
+{
+    public $timeout = 100;
+
+    public $i;
+
+    public function __construct($i, $timeout = 100)
+    {
+        $this->i = $i;
+        $this->timeout = $timeout;
     }
 
     public function handle()

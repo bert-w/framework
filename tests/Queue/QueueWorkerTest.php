@@ -27,6 +27,7 @@ use Illuminate\Queue\WorkerOptions;
 use Illuminate\Queue\WorkerStopReason;
 use Illuminate\Support\Carbon;
 use Mockery;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -95,6 +96,19 @@ class QueueWorkerTest extends TestCase
         $this->events->shouldHaveReceived('dispatch')->with(Mockery::type(JobProcessing::class))->twice();
 
         $this->events->shouldHaveReceived('dispatch')->with(Mockery::type(JobProcessed::class))->twice();
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    public function testWorkerSharesItsTimeoutWithTheConnection()
+    {
+        $workerOptions = new WorkerOptions(timeout: 30);
+        $workerOptions->stopWhenEmpty = true;
+
+        $dependencies = $this->workerDependencies('default', ['queue' => []]);
+
+        (new InsomniacWorker(...$dependencies))->daemon('default', 'queue', $workerOptions);
+
+        $this->assertSame(30, $dependencies[0]->connection('default')->workerTimeout);
     }
 
     public function testWorkerStopsWhenQueueIsEmptyForConfiguredSeconds()
@@ -822,6 +836,7 @@ class WorkerFakeConnection
 {
     public $connectionName;
     public $jobs = [];
+    public $workerTimeout;
 
     public function __construct($connectionName, $jobs)
     {
@@ -837,6 +852,11 @@ class WorkerFakeConnection
     public function getConnectionName()
     {
         return $this->connectionName;
+    }
+
+    public function setWorkerTimeout($timeout)
+    {
+        $this->workerTimeout = $timeout;
     }
 }
 
